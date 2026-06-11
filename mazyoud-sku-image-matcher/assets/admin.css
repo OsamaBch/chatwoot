@@ -1,0 +1,122 @@
+/* Mazyoud SKU Image Matcher — admin screen styles (loaded only on its own screen). */
+
+.msim-wrap .msim-card {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 4px;
+	box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+	margin: 16px 0;
+	padding: 4px 20px 16px;
+	max-width: 1100px;
+}
+
+.msim-wrap .msim-card h2 {
+	margin-bottom: 4px;
+}
+
+#msim-scan-spinner {
+	float: none;
+	margin-top: 0;
+	vertical-align: middle;
+}
+
+.msim-progress {
+	max-width: 640px;
+	margin-top: 8px;
+}
+
+.msim-progress-bar {
+	background: #dcdcde;
+	border-radius: 10px;
+	height: 18px;
+	overflow: hidden;
+}
+
+.msim-progress-fill {
+	background: #2271b1;
+	height: 100%;
+	transition: width 0.6s ease;
+}
+
+.msim-progress-text {
+	margin: 6px 0 0;
+	font-weight: 600;
+}
+
+.msim-report h3 {
+	margin: 18px 0 6px;
+}
+
+.msim-report table {
+	margin-top: 4px;
+}
+
+.msim-report .msim-summary {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+	margin: 12px 0;
+	padding: 0;
+	list-style: none;
+}
+
+.msim-report .msim-summary li {
+	background: #f0f0f1;
+	border-radius: 4px;
+	margin: 0;
+	padding: 8px 14px;
+}
+
+.msim-report .msim-summary li strong {
+	display: block;
+	font-size: 18px;
+}
+
+.msim-report .msim-warning-list li {
+	color: #996800;
+	margin: 2px 0;
+}
+
+.msim-report .msim-cell-warning {
+	color: #996800;
+}
+
+.msim-badge {
+	border-radius: 3px;
+	display: inline-block;
+	font-size: 11px;
+	font-weight: 600;
+	padding: 2px 8px;
+	background: #f0f0f1;
+	color: #3c434a;
+}
+
+.msim-badge-running,
+.msim-badge-rolling_back {
+	background: #f0f6fc;
+	color: #2271b1;
+}
+
+.msim-badge-completed,
+.msim-badge-rolled_back {
+	background: #edfaef;
+	color: #00753f;
+}
+
+.msim-badge-completed_with_errors,
+.msim-badge-rolled_back_with_conflicts,
+.msim-badge-cancelled {
+	background: #fcf0f1;
+	color: #b32d2e;
+}
+
+.msim-history .msim-actions .button {
+	margin: 2px 4px 2px 0;
+}
+
+.msim-notice-inline {
+	border-left: 4px solid #b32d2e;
+	background: #fcf0f1;
+	margin: 10px 0;
+	padding: 8px 12px;
+}
