@@ -6,7 +6,7 @@ Tested up to: 6.8
 Requires PHP: 8.1
 WC requires at least: 8.0
 WC tested up to: 9.8
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -64,10 +64,13 @@ It fires `do_action( 'msim_product_images_updated', $product_id )` after each pr
 
 == Changelog ==
 
+= 1.0.1 =
+* Private and pending products are now matchable (previously only publish and draft). New `msim_matchable_post_statuses` filter to customize the set.
+
 = 1.0.0 =
 * Initial release: dry-run scan, background runs, rollback with conflict detection, auto-attach on upload, product-ID fallback, duplicate-rename detection.
 
 == Upgrade Notice ==
 
-= 1.0.0 =
-Initial release.
+= 1.0.1 =
+Adds matching for private/pending products — recommended if your store uses private products.

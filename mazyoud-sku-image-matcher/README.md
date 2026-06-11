@@ -58,9 +58,16 @@ The scan report shows, per product, which identifier type matched
 
 ### Post statuses
 
-Products in `publish` **and** `draft` are matchable (images often arrive
-before publication); trash is always excluded. This applies to both the SKU
-and the product-ID paths.
+Products in `publish`, `draft`, `private` and `pending` are matchable
+(images often arrive before publication, and stores legitimately keep live
+products private); trash is always excluded. This applies to both the SKU
+and the product-ID paths, and the set can be customized:
+
+```php
+add_filter( 'msim_matchable_post_statuses', function ( array $statuses ) {
+    return array( 'publish' ); // e.g. only published products
+} );
+```
 
 ---
 
@@ -314,6 +321,7 @@ WP-suffix-stripped), `raw_stem` (pre-strip), `position`, `base`,
 | Hook | Type | Description |
 | --- | --- | --- |
 | `msim_matchers` | filter | Modify the matcher pipeline (see above). |
+| `msim_matchable_post_statuses` | filter | Product post statuses eligible for matching. Default: `publish`, `draft`, `private`, `pending`. |
 | `msim_product_images_updated` | action | Fires after a product's images change (run, rollback or auto-attach). Args: `int $product_id`. Use for page-cache/CDN purges. |
 
 ## 8. Database schema

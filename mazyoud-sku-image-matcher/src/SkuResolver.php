@@ -25,8 +25,10 @@ defined( 'ABSPATH' ) || exit;
  *    against the indexed sku column — the full SKU set is never loaded on
  *    the upload path.
  *
- * Product post statuses include publish and draft (images often arrive
- * before publication); trash is always excluded.
+ * Product post statuses include publish, draft, private and pending
+ * (images often arrive before publication, and stores legitimately keep
+ * live products private); trash is always excluded. The set is filterable
+ * via `msim_matchable_post_statuses`.
  */
 class SkuResolver {
 
@@ -41,11 +43,32 @@ class SkuResolver {
 	private const IN_CHUNK = 500;
 
 	/**
-	 * Post statuses considered matchable.
+	 * Default post statuses considered matchable.
 	 *
 	 * @var string[]
 	 */
-	private const STATUSES = array( 'publish', 'draft' );
+	private const DEFAULT_STATUSES = array( 'publish', 'draft', 'private', 'pending' );
+
+	/**
+	 * Post statuses a product may have to be matchable.
+	 *
+	 * @return string[] Sanitized, never empty.
+	 */
+	public function matchable_statuses() {
+		/**
+		 * Filter the product post statuses eligible for matching.
+		 *
+		 * Trash should never be included. Defaults to publish, draft,
+		 * private and pending.
+		 *
+		 * @param string[] $statuses Eligible post statuses.
+		 */
+		$statuses = apply_filters( 'msim_matchable_post_statuses', self::DEFAULT_STATUSES );
+
+		$statuses = array_values( array_unique( array_filter( array_map( 'sanitize_key', (array) $statuses ) ) ) );
+
+		return empty( $statuses ) ? array( 'publish' ) : $statuses;
+	}
 
 	/**
 	 * Load the full parent-product SKU map: lowercased key → product IDs.
@@ -59,26 +82,25 @@ class SkuResolver {
 	public function load_product_sku_map() {
 		global $wpdb;
 
-		$parser  = new FilenameParser();
-		$map     = array();
-		$last_id = 0;
+		$parser   = new FilenameParser();
+		$map      = array();
+		$last_id  = 0;
+		$statuses = $this->matchable_statuses();
+		$status_placeholders = implode( ',', array_fill( 0, count( $statuses ), '%s' ) );
 
 		do {
-			$rows = $wpdb->get_results( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-				$wpdb->prepare(
-					"SELECT l.product_id, l.sku
-					 FROM {$wpdb->prefix}wc_product_meta_lookup l
-					 INNER JOIN {$wpdb->posts} p ON p.ID = l.product_id
-					 WHERE p.post_type = 'product'
-					   AND p.post_status IN ( 'publish', 'draft' )
-					   AND l.sku <> ''
-					   AND l.product_id > %d
-					 ORDER BY l.product_id ASC
-					 LIMIT %d",
-					$last_id,
-					self::LOAD_CHUNK
-				)
-			);
+			$sql = "SELECT l.product_id, l.sku
+				 FROM {$wpdb->prefix}wc_product_meta_lookup l
+				 INNER JOIN {$wpdb->posts} p ON p.ID = l.product_id
+				 WHERE p.post_type = 'product'
+				   AND p.post_status IN ( {$status_placeholders} )
+				   AND l.sku <> ''
+				   AND l.product_id > %d
+				 ORDER BY l.product_id ASC
+				 LIMIT %d";
+
+			$params = array_merge( $statuses, array( $last_id, self::LOAD_CHUNK ) );
+			$rows   = $wpdb->get_results( $wpdb->prepare( $sql, $params ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
 
 			foreach ( (array) $rows as $row ) {
 				$product_id = (int) $row->product_id;
@@ -107,18 +129,25 @@ class SkuResolver {
 	}
 
 	/**
-	 * Load the set of valid product IDs (post_type "product", publish/draft)
-	 * for the product-ID fallback matcher. Variations are never included.
+	 * Load the set of valid product IDs (post_type "product", matchable
+	 * statuses) for the product-ID fallback matcher. Variations are never
+	 * included.
 	 *
 	 * @return array<int, true> Flipped set for O(1) membership checks.
 	 */
 	public function load_product_id_set() {
 		global $wpdb;
 
+		$statuses = $this->matchable_statuses();
+		$status_placeholders = implode( ',', array_fill( 0, count( $statuses ), '%s' ) );
+
 		$ids = $wpdb->get_col( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-			"SELECT ID FROM {$wpdb->posts}
-			 WHERE post_type = 'product'
-			   AND post_status IN ( 'publish', 'draft' )"
+			$wpdb->prepare(
+				"SELECT ID FROM {$wpdb->posts}
+				 WHERE post_type = 'product'
+				   AND post_status IN ( {$status_placeholders} )", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				$statuses
+			)
 		);
 
 		$set = array();
@@ -156,8 +185,9 @@ class SkuResolver {
 			$wanted[ $parser->lower( $candidate ) ] = true;
 		}
 
+		$statuses            = $this->matchable_statuses();
 		$type_placeholders   = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
-		$status_placeholders = implode( ',', array_fill( 0, count( self::STATUSES ), '%s' ) );
+		$status_placeholders = implode( ',', array_fill( 0, count( $statuses ), '%s' ) );
 
 		$found = array();
 
@@ -171,7 +201,7 @@ class SkuResolver {
 				   AND p.post_status IN ( {$status_placeholders} )
 				   AND l.sku IN ( {$sku_placeholders} )";
 
-			$params = array_merge( $post_types, self::STATUSES, $chunk );
+			$params = array_merge( $post_types, $statuses, $chunk );
 			$rows   = $wpdb->get_results( $wpdb->prepare( $sql, $params ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared
 
 			foreach ( (array) $rows as $row ) {
@@ -213,8 +243,8 @@ class SkuResolver {
 	}
 
 	/**
-	 * Whether a product (post_type "product", publish/draft) exists with the
-	 * given ID. Single targeted query — used by the auto-attach path only.
+	 * Whether a product (post_type "product", matchable status) exists with
+	 * the given ID. Single targeted query — used by the auto-attach path only.
 	 *
 	 * @param int $product_id Candidate ID.
 	 * @return bool
@@ -227,13 +257,16 @@ class SkuResolver {
 			return false;
 		}
 
+		$statuses = $this->matchable_statuses();
+		$status_placeholders = implode( ',', array_fill( 0, count( $statuses ), '%s' ) );
+
 		$found = $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 			$wpdb->prepare(
 				"SELECT ID FROM {$wpdb->posts}
 				 WHERE ID = %d
 				   AND post_type = 'product'
-				   AND post_status IN ( 'publish', 'draft' )",
-				$product_id
+				   AND post_status IN ( {$status_placeholders} )", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				array_merge( array( $product_id ), $statuses )
 			)
 		);
 

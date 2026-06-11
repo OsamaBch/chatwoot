@@ -3,7 +3,7 @@
  * Plugin Name:       Mazyoud SKU Image Matcher
  * Plugin URI:        https://mazyoud.com/
  * Description:       Automatically attaches Media Library images to WooCommerce products by parsing the SKU (or product ID) from the image filename. Dry-run scan, background processing via Action Scheduler, full rollback.
- * Version:           1.0.0
+ * Version:           1.0.1
  * Author:            Mazyoud
  * Author URI:        https://mazyoud.com/
  * License:           GPL-2.0-or-later
@@ -20,7 +20,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'MSIM_VERSION', '1.0.0' );
+define( 'MSIM_VERSION', '1.0.1' );
 define( 'MSIM_DB_VERSION', '1.0.0' );
 define( 'MSIM_FILE', __FILE__ );
 define( 'MSIM_DIR', plugin_dir_path( __FILE__ ) );
