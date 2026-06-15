@@ -69,28 +69,17 @@ export async function frameImage(input: Buffer): Promise<FrameResult> {
   const pasteTop = Math.max(0, top);
   const visW = Math.min(scaledW - srcLeft, outW - pasteLeft);
   const visH = Math.min(scaledH - srcTop, outH - pasteTop);
-  const padL = pasteLeft;
-  const padT = pasteTop;
-  const padR = outW - pasteLeft - visW;
-  const padB = outH - pasteTop - visH;
 
+  // NOTE: mirror/edge extension duplicates anything at the photo's edges
+  // (products, watermarks), so we use a solid background-colour fill here. A
+  // texture-continuing border is the generative-outpaint / background-removal
+  // upgrade (selectable next).
   let pipeline: sharp.Sharp;
   if (visW > 0 && visH > 0) {
     const piece = await sharp(scaled).extract({ left: srcLeft, top: srcTop, width: visW, height: visH }).toBuffer();
-    const needsExtend = padL > 0 || padT > 0 || padR > 0 || padB > 0;
-    if (config.extendBackground && subj.found && needsExtend) {
-      // Content-aware extension: mirror the photo's own (textured) background
-      // outward to fill the canvas — continues the texture instead of a flat
-      // solid border. Deterministic, seamless on near-uniform/woven backgrounds,
-      // zero AI cost. The product is centered with margin, so only background is
-      // mirrored. (Textured-but-irregular backdrops are flagged for review and are
-      // the phase-4 generative-outpaint upgrade.)
-      pipeline = sharp(piece).extend({ top: padT, bottom: padB, left: padL, right: padR, extendWith: 'mirror' });
-    } else {
-      pipeline = sharp({ create: { width: outW, height: outH, channels: 3, background: fill } }).composite([
-        { input: piece, left: pasteLeft, top: pasteTop },
-      ]);
-    }
+    pipeline = sharp({ create: { width: outW, height: outH, channels: 3, background: fill } }).composite([
+      { input: piece, left: pasteLeft, top: pasteTop },
+    ]);
   } else {
     pipeline = sharp({ create: { width: outW, height: outH, channels: 3, background: fill } });
   }
