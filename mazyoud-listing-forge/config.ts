@@ -67,6 +67,15 @@ export interface Config {
   aiMaxRetries: number;
   /** Base delay (ms) for exponential backoff: base * 2^attempt (+ jitter). */
   aiRetryBaseMs: number;
+  /** Hard timeout per AI request (ms) so a slow provider can never hang a batch. */
+  aiRequestTimeoutMs: number;
+  /**
+   * Auto-detect watermarks and inpaint them during Generate. OFF by default:
+   * corner heuristics can mistake a real product (e.g. a hat in the corner) for a
+   * badge, which is slow and risky. Prefer the manual watermark box. When off,
+   * Generate is pure deterministic framing (fast, no AI, no cost).
+   */
+  autoDetectWatermarks: boolean;
   /** Rough per-image cost estimates (USD) — display only, editable. */
   aiPricing: { geminiPerImageUSD: number; openaiPerImageUSD: number };
   /** Batches at/above this size require an explicit confirm before generating. */
@@ -106,8 +115,10 @@ export const config: Config = {
   maxOutpaintFraction: 0.25,
   fidelityDiffThreshold: 0.06,
 
-  aiMaxRetries: 4,
+  aiMaxRetries: 2,
   aiRetryBaseMs: 500,
+  aiRequestTimeoutMs: 30000,
+  autoDetectWatermarks: false,
   // Per-AI-edit estimates (editable in Settings). Note: ~80% of images need NO AI.
   // Gemini 3 Pro Image ≈ $0.134 at 2K ($0.067 batch); gpt-image-1 medium ≈ $0.04.
   aiPricing: { geminiPerImageUSD: 0.134, openaiPerImageUSD: 0.04 },

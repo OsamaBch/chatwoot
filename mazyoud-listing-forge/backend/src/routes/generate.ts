@@ -22,11 +22,10 @@ const router = Router();
  * when no API key is set (the image is then flagged for review, never charged).
  */
 router.post('/', async (req, res) => {
-  const { sku, order, boxes, forceClean, skipClean } = req.body as {
+  const { sku, order, boxes, skipClean } = req.body as {
     sku?: string;
     order?: string[];
     boxes?: Box[];
-    forceClean?: boolean;
     skipClean?: boolean;
   };
   if (!sku || !sku.trim()) {
@@ -53,10 +52,15 @@ router.post('/', async (req, res) => {
       try {
         let img: Buffer = await readFile(normalizedPath(id));
 
-        // ── AI clean-up (masked inpaint) ──────────────────────────────────────
+        // ── AI clean-up (masked inpaint) — only on manually-marked regions, or
+        // auto-detected ones when explicitly enabled (off by default). ──────────
         if (!skipClean) {
-          const regions = manualBoxes.length ? manualBoxes : (await detectWatermarks(img)).boxes;
-          if (regions.length && (forceClean || manualBoxes.length || regions.length)) {
+          const regions = manualBoxes.length
+            ? manualBoxes
+            : config.autoDetectWatermarks
+              ? (await detectWatermarks(img)).boxes
+              : [];
+          if (regions.length) {
             try {
               rec.status = 'cleaning';
               const provider = getProvider();

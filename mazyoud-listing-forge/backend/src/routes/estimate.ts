@@ -24,7 +24,7 @@ router.post('/', async (req, res) => {
 
   let aiCalls = 0;
   let watermarked = 0;
-  if (!skipClean) {
+  if (!skipClean && config.autoDetectWatermarks) {
     for (const id of ids) {
       if (!store.get(id)) continue;
       try {

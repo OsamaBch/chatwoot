@@ -1,6 +1,6 @@
 import sharp from 'sharp';
 import { config } from '../config';
-import { withRetry, redact } from './retry';
+import { withRetry, redact, fetchWithTimeout } from './retry';
 import { ProviderError, type AiProvider, type AiResult, type CleanupInput, type OutpaintInput } from './provider';
 
 const BASE = 'https://api.openai.com/v1';
@@ -15,7 +15,7 @@ export class OpenAIProvider implements AiProvider {
 
   async testKey(): Promise<{ ok: boolean; message: string }> {
     try {
-      const res = await fetch(`${BASE}/models`, { headers: { Authorization: `Bearer ${this.apiKey}` } });
+      const res = await fetchWithTimeout(`${BASE}/models`, { headers: { Authorization: `Bearer ${this.apiKey}` } }, config.aiRequestTimeoutMs);
       if (res.ok) return { ok: true, message: `OpenAI key valid. Active model: ${this.modelId}.` };
       const body = redact(await safeText(res)).slice(0, 200);
       return { ok: false, message: `OpenAI rejected the key (HTTP ${res.status}). ${body}` };
@@ -57,11 +57,11 @@ export class OpenAIProvider implements AiProvider {
 
   private async edit(form: FormData): Promise<Buffer> {
     return withRetry(async () => {
-      const res = await fetch(`${BASE}/images/edits`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${this.apiKey}` },
-        body: form,
-      });
+      const res = await fetchWithTimeout(
+        `${BASE}/images/edits`,
+        { method: 'POST', headers: { Authorization: `Bearer ${this.apiKey}` }, body: form },
+        config.aiRequestTimeoutMs,
+      );
       if (!res.ok) {
         throw new ProviderError(`OpenAI images/edits failed (HTTP ${res.status}): ${redact(await safeText(res)).slice(0, 300)}`, res.status);
       }

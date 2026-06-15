@@ -1,4 +1,5 @@
-import { withRetry, redact } from './retry';
+import { config } from '../config';
+import { withRetry, redact, fetchWithTimeout } from './retry';
 import { ProviderError, type AiProvider, type AiResult, type CleanupInput, type OutpaintInput } from './provider';
 
 const BASE = 'https://generativelanguage.googleapis.com/v1beta';
@@ -17,7 +18,7 @@ export class GeminiProvider implements AiProvider {
 
   async testKey(): Promise<{ ok: boolean; message: string }> {
     try {
-      const res = await fetch(`${BASE}/models`, { headers: { 'x-goog-api-key': this.apiKey } });
+      const res = await fetchWithTimeout(`${BASE}/models`, { headers: { 'x-goog-api-key': this.apiKey } }, config.aiRequestTimeoutMs);
       if (res.ok) return { ok: true, message: `Gemini key valid. Active model: ${this.modelId}.` };
       const body = redact(await safeText(res)).slice(0, 200);
       return { ok: false, message: `Gemini rejected the key (HTTP ${res.status}). ${body}` };
@@ -53,11 +54,15 @@ export class GeminiProvider implements AiProvider {
 
   private async generateImage(parts: unknown[]): Promise<Buffer> {
     return withRetry(async () => {
-      const res = await fetch(`${BASE}/models/${this.modelId}:generateContent`, {
-        method: 'POST',
-        headers: { 'x-goog-api-key': this.apiKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts }] }),
-      });
+      const res = await fetchWithTimeout(
+        `${BASE}/models/${this.modelId}:generateContent`,
+        {
+          method: 'POST',
+          headers: { 'x-goog-api-key': this.apiKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts }] }),
+        },
+        config.aiRequestTimeoutMs,
+      );
       if (!res.ok) {
         throw new ProviderError(`Gemini generateContent failed (HTTP ${res.status}): ${redact(await safeText(res)).slice(0, 300)}`, res.status);
       }
