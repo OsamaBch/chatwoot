@@ -10,6 +10,7 @@ import generateRoute from './routes/generate';
 import exportRoute from './routes/export';
 import settingsRoute from './routes/settings';
 import estimateRoute from './routes/estimate';
+import usageRoute from './routes/usage';
 
 // .env is a fallback for keys/overrides; it lives at the project root.
 dotenv.config({ path: path.join(PROJECT_ROOT, '.env') });
@@ -23,6 +24,7 @@ app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.use('/api/config', configRoute);
 app.use('/api/settings', settingsRoute);
 app.use('/api/estimate', estimateRoute);
+app.use('/api/usage', usageRoute);
 app.use('/api/ingest', ingestRoute);
 app.use('/api/generate', generateRoute);
 app.use('/api/export', exportRoute);

@@ -10,6 +10,7 @@ import ReviewQueue from './components/ReviewQueue';
 import SettingsModal from './components/SettingsModal';
 import ConflictModal from './components/ConflictModal';
 import ConfirmBatchModal from './components/ConfirmBatchModal';
+import UsageDashboard from './components/UsageDashboard';
 
 type Phase = 'idle' | 'ingesting' | 'generating';
 type Notice = { kind: 'info' | 'error' | 'success'; text: string };
@@ -36,6 +37,7 @@ export default function App() {
   const [phase, setPhase] = useState<Phase>('idle');
   const [exported, setExported] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
   const [outputDir, setOutputDir] = useState('');
   const [conflict, setConflict] = useState<{ conflicts: string[]; outputDir: string } | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -120,14 +122,18 @@ export default function App() {
   const runGenerate = async () => {
     setPendingEstimate(null);
     setPhase('generating');
+    const batch = order();
+    await api.resetCost().catch(() => undefined); // start this run's tally clean
     setImages((prev) => prev.map((im) => ({ ...im, status: 'queued' })));
-    await runPool(order(), config?.concurrency ?? 3, frameOne);
+    await runPool(batch, config?.concurrency ?? 3, frameOne);
     setExported(false);
     setPhase('idle');
     try {
-      setCost(await api.getCost());
+      const c = await api.getCost();
+      setCost(c);
+      await api.recordUsage({ sku, images: batch.length, aiCalls: c.aiCalls, costUSD: c.costUSD });
     } catch {
-      /* tally is best-effort */
+      /* tally + usage recording are best-effort */
     }
   };
 
@@ -239,6 +245,9 @@ export default function App() {
                 )}
               </span>
             )}
+            <button className="btn-ghost" onClick={() => setUsageOpen(true)}>
+              Usage
+            </button>
             <button className="btn-ghost" onClick={() => setSettingsOpen(true)}>
               Settings
             </button>
@@ -339,6 +348,7 @@ export default function App() {
       </div>
 
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} config={config} onChanged={loadSettings} />
+      <UsageDashboard open={usageOpen} onClose={() => setUsageOpen(false)} />
       {pendingEstimate && (
         <ConfirmBatchModal estimate={pendingEstimate} onConfirm={runGenerate} onCancel={() => setPendingEstimate(null)} />
       )}

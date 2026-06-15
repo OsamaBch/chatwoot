@@ -3,13 +3,19 @@ import path from 'node:path';
 import { config, type AiProviderName } from '../config';
 import { appDataDir } from './appdata';
 
-/** Non-secret runtime preferences (active provider + editable model ids). */
+/** Non-secret runtime preferences (active provider, editable model ids + pricing). */
 const FILE = path.join(appDataDir(), 'settings.json');
+
+export interface Pricing {
+  geminiPerImageUSD: number;
+  openaiPerImageUSD: number;
+}
 
 export interface RuntimeSettings {
   provider: AiProviderName;
   geminiModelId: string;
   openaiModelId: string;
+  pricing: Pricing;
 }
 
 function readFile(): Partial<RuntimeSettings> {
@@ -24,23 +30,35 @@ function readFile(): Partial<RuntimeSettings> {
 /** Resolution order: saved settings → .env overrides → config.ts defaults. */
 export function getSettings(): RuntimeSettings {
   const f = readFile();
-  const provider = (f.provider || (process.env.AI_PROVIDER as AiProviderName | undefined) || config.aiProvider);
+  const provider = f.provider || (process.env.AI_PROVIDER as AiProviderName | undefined) || config.aiProvider;
   return {
     provider: provider === 'openai' ? 'openai' : 'gemini',
     geminiModelId: f.geminiModelId || process.env.GEMINI_MODEL_ID || config.geminiModelId,
     openaiModelId: f.openaiModelId || process.env.OPENAI_MODEL_ID || config.openaiModelId,
+    pricing: {
+      geminiPerImageUSD: numOr(f.pricing?.geminiPerImageUSD, config.aiPricing.geminiPerImageUSD),
+      openaiPerImageUSD: numOr(f.pricing?.openaiPerImageUSD, config.aiPricing.openaiPerImageUSD),
+    },
   };
 }
 
-export function saveSettings(patch: Partial<RuntimeSettings>): RuntimeSettings {
+export function saveSettings(patch: Partial<Omit<RuntimeSettings, 'pricing'>> & { pricing?: Partial<Pricing> }): RuntimeSettings {
   const cur = getSettings();
   const next: RuntimeSettings = {
     provider: patch.provider ?? cur.provider,
     geminiModelId: patch.geminiModelId ?? cur.geminiModelId,
     openaiModelId: patch.openaiModelId ?? cur.openaiModelId,
+    pricing: {
+      geminiPerImageUSD: numOr(patch.pricing?.geminiPerImageUSD, cur.pricing.geminiPerImageUSD),
+      openaiPerImageUSD: numOr(patch.pricing?.openaiPerImageUSD, cur.pricing.openaiPerImageUSD),
+    },
   };
   const dir = path.dirname(FILE);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   writeFileSync(FILE, JSON.stringify(next, null, 2));
   return next;
+}
+
+function numOr(v: unknown, fallback: number): number {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : fallback;
 }

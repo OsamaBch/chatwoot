@@ -14,24 +14,25 @@ function isProvider(p: unknown): p is AiProviderName {
 router.get('/', (_req, res) => {
   const s = getSettings();
   res.json({
-    ...s,
+    ...s, // includes effective (editable) pricing
     keys: { gemini: keyStatus('gemini'), openai: keyStatus('openai') },
-    pricing: config.aiPricing,
     openaiMaxLongSide: config.openaiMaxLongSide,
   });
 });
 
-// Update provider + editable model ids.
+// Update provider + editable model ids + per-edit pricing.
 router.post('/', (req, res) => {
-  const { provider, geminiModelId, openaiModelId } = req.body as Partial<{
+  const { provider, geminiModelId, openaiModelId, pricing } = req.body as Partial<{
     provider: AiProviderName;
     geminiModelId: string;
     openaiModelId: string;
+    pricing: { geminiPerImageUSD?: number; openaiPerImageUSD?: number };
   }>;
   const next = saveSettings({
     provider: isProvider(provider) ? provider : undefined,
     geminiModelId: typeof geminiModelId === 'string' ? geminiModelId.trim() : undefined,
     openaiModelId: typeof openaiModelId === 'string' ? openaiModelId.trim() : undefined,
+    pricing: pricing && typeof pricing === 'object' ? pricing : undefined,
   });
   res.json(next);
 });

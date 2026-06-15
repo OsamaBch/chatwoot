@@ -15,6 +15,7 @@ export default function SettingsModal({ open, onClose, config, onChanged }: Prop
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [keyInput, setKeyInput] = useState<Record<AiProviderName, string>>({ gemini: '', openai: '' });
   const [modelInput, setModelInput] = useState<Record<AiProviderName, string>>({ gemini: '', openai: '' });
+  const [priceInput, setPriceInput] = useState<Record<AiProviderName, string>>({ gemini: '', openai: '' });
   const [test, setTest] = useState<Record<AiProviderName, TestState>>({ gemini: null, openai: null });
   const [busy, setBusy] = useState(false);
 
@@ -22,6 +23,7 @@ export default function SettingsModal({ open, onClose, config, onChanged }: Prop
     const s = await api.getSettings();
     setSettings(s);
     setModelInput({ gemini: s.geminiModelId, openai: s.openaiModelId });
+    setPriceInput({ gemini: String(s.pricing.geminiPerImageUSD), openai: String(s.pricing.openaiPerImageUSD) });
   };
 
   useEffect(() => {
@@ -53,6 +55,18 @@ export default function SettingsModal({ open, onClose, config, onChanged }: Prop
     setBusy(true);
     try {
       await api.saveSettings(provider === 'gemini' ? { geminiModelId: modelInput.gemini } : { openaiModelId: modelInput.openai });
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const savePrice = async (provider: AiProviderName) => {
+    const v = parseFloat(priceInput[provider]);
+    if (!Number.isFinite(v) || v < 0) return;
+    setBusy(true);
+    try {
+      await api.saveSettings({ pricing: provider === 'gemini' ? { geminiPerImageUSD: v } : { openaiPerImageUSD: v } });
       await refresh();
     } finally {
       setBusy(false);
@@ -143,6 +157,22 @@ export default function SettingsModal({ open, onClose, config, onChanged }: Prop
                         Save
                       </button>
                     </div>
+                    {/* per-edit price */}
+                    <div className="flex items-center gap-2">
+                      <span className="w-16 shrink-0 text-[11px] text-neutral-500">$ / edit</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.001"
+                        value={priceInput[p.id]}
+                        onChange={(e) => setPriceInput((m) => ({ ...m, [p.id]: e.target.value }))}
+                        className="w-28 rounded-lg border border-neutral-300 px-2 py-1.5 text-xs focus:border-coral focus:outline-none"
+                      />
+                      <button className="btn-ghost px-2 py-1 text-xs" disabled={busy} onClick={() => savePrice(p.id)}>
+                        Save
+                      </button>
+                      <span className="text-[11px] text-neutral-400">per AI edit · most images skip AI</span>
+                    </div>
                     {/* key */}
                     <div className="flex items-center gap-2">
                       <span className="w-16 shrink-0 text-[11px] text-neutral-500">API key</span>
@@ -189,7 +219,7 @@ export default function SettingsModal({ open, onClose, config, onChanged }: Prop
               <Row label="JPEG target" value={`≤ ${config.jpegMaxKB} KB · floor q${config.jpegQualityFloor}`} />
               <Row label="Filename" value={`{SKU}${config.filenameSeparator}{n}${config.fileExtension}`} />
               <Row label="Concurrency" value={String(config.concurrency)} />
-              <Row label="Est. cost / image" value={`$${settings?.pricing[settings.provider === 'openai' ? 'openaiPerImageUSD' : 'geminiPerImageUSD'] ?? '—'}`} />
+              <Row label="Active provider" value={settings?.provider ?? '—'} />
             </div>
           ) : (
             <p className="text-sm text-neutral-400">Loading…</p>

@@ -7,6 +7,7 @@ import type {
   ImageRecord,
   KeyStatus,
   PipelineConfig,
+  Usage,
 } from './types';
 
 async function json<T>(res: Response): Promise<T> {
@@ -100,6 +101,7 @@ export const api = {
     provider?: AiProviderName;
     geminiModelId?: string;
     openaiModelId?: string;
+    pricing?: { geminiPerImageUSD?: number; openaiPerImageUSD?: number };
   }): Promise<void> {
     await json(
       await fetch('/api/settings', {
@@ -150,5 +152,28 @@ export const api = {
 
   async getCost(): Promise<CostTally> {
     return json(await fetch('/api/estimate/cost'));
+  },
+
+  async resetCost(): Promise<void> {
+    await fetch('/api/estimate/cost/reset', { method: 'POST' });
+  },
+
+  // ── Consumption dashboard ──────────────────────────────────────────────────
+  async getUsage(): Promise<Usage> {
+    return json(await fetch('/api/usage'));
+  },
+
+  async recordUsage(payload: { sku: string; images: number; aiCalls: number; costUSD: number }): Promise<Usage> {
+    return json(
+      await fetch('/api/usage/record', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }),
+    );
+  },
+
+  async clearUsage(): Promise<Usage> {
+    return json(await fetch('/api/usage/clear', { method: 'POST' }));
   },
 };

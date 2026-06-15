@@ -101,8 +101,9 @@ export const config: Config = {
 
   aiMaxRetries: 4,
   aiRetryBaseMs: 500,
-  // Rough, editable estimates (image-generation pricing is usage-based and changes).
-  aiPricing: { geminiPerImageUSD: 0.15, openaiPerImageUSD: 0.17 },
+  // Per-AI-edit estimates (editable in Settings). Note: ~80% of images need NO AI.
+  // Gemini 3 Pro Image ≈ $0.134 at 2K ($0.067 batch); gpt-image-1 medium ≈ $0.04.
+  aiPricing: { geminiPerImageUSD: 0.134, openaiPerImageUSD: 0.04 },
   largeBatchConfirmThreshold: 24,
 
   enableBackblaze: false,

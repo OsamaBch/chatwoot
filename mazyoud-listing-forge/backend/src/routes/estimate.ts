@@ -18,8 +18,9 @@ router.post('/', (req, res) => {
     forceOutpaint?: number;
   };
   const images = Array.isArray(order) && order.length ? order.length : store.all().length;
-  const provider = getSettings().provider;
-  const perImageUSD = provider === 'openai' ? config.aiPricing.openaiPerImageUSD : config.aiPricing.geminiPerImageUSD;
+  const settings = getSettings();
+  const provider = settings.provider;
+  const perImageUSD = provider === 'openai' ? settings.pricing.openaiPerImageUSD : settings.pricing.geminiPerImageUSD;
   const aiCalls = Math.max(0, forceCleanup) + Math.max(0, forceOutpaint);
   const estCostUSD = +(aiCalls * perImageUSD).toFixed(2);
 

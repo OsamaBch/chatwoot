@@ -75,3 +75,23 @@ export interface CostTally {
   aiCalls: number;
   costUSD: number;
 }
+
+export interface UsageRun {
+  ts: string;
+  sku: string;
+  provider: AiProviderName;
+  images: number;
+  aiCalls: number;
+  costUSD: number;
+}
+
+export interface ProviderTotals {
+  aiCalls: number;
+  costUSD: number;
+}
+
+export interface Usage {
+  totals: { runs: number; images: number; aiCalls: number; costUSD: number };
+  byProvider: Record<AiProviderName, ProviderTotals>;
+  runs: UsageRun[];
+}
