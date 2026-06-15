@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from './api';
 import { previewNames, slugifySku } from './naming';
-import type { ConflictPolicy, ImageRecord, PipelineConfig } from './types';
+import type { AppSettings, ConflictPolicy, CostTally, Estimate, ImageRecord, PipelineConfig } from './types';
 import SkuField from './components/SkuField';
 import DropZone from './components/DropZone';
 import ResultGrid from './components/ResultGrid';
@@ -9,6 +9,7 @@ import BatchProgress from './components/BatchProgress';
 import ReviewQueue from './components/ReviewQueue';
 import SettingsModal from './components/SettingsModal';
 import ConflictModal from './components/ConflictModal';
+import ConfirmBatchModal from './components/ConfirmBatchModal';
 
 type Phase = 'idle' | 'ingesting' | 'generating';
 type Notice = { kind: 'info' | 'error' | 'success'; text: string };
@@ -38,9 +39,17 @@ export default function App() {
   const [outputDir, setOutputDir] = useState('');
   const [conflict, setConflict] = useState<{ conflicts: string[]; outputDir: string } | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [cost, setCost] = useState<CostTally | null>(null);
+  const [pendingEstimate, setPendingEstimate] = useState<Estimate | null>(null);
+
+  const loadSettings = () => {
+    api.getSettings().then(setSettings).catch(() => undefined);
+  };
 
   useEffect(() => {
     api.getConfig().then(setConfig).catch((e) => setNotice({ kind: 'error', text: `Backend not reachable: ${msg(e)}` }));
+    loadSettings();
   }, []);
 
   const slug = useMemo(() => slugifySku(sku, config?.filenameSeparator), [sku, config]);
@@ -93,14 +102,33 @@ export default function App() {
     }
   };
 
-  const generateAll = async () => {
+  const requestGenerate = async () => {
     if (!canGenerate) return;
     setNotice(null);
+    try {
+      const est = await api.estimate(order());
+      if (est.requiresConfirm) {
+        setPendingEstimate(est);
+        return;
+      }
+    } catch {
+      /* estimate is best-effort — proceed if it fails */
+    }
+    await runGenerate();
+  };
+
+  const runGenerate = async () => {
+    setPendingEstimate(null);
     setPhase('generating');
     setImages((prev) => prev.map((im) => ({ ...im, status: 'queued' })));
     await runPool(order(), config?.concurrency ?? 3, frameOne);
     setExported(false);
     setPhase('idle');
+    try {
+      setCost(await api.getCost());
+    } catch {
+      /* tally is best-effort */
+    }
   };
 
   const rerun = async (id: string) => {
@@ -182,6 +210,7 @@ export default function App() {
     setSku('');
     setExported(false);
     setNotice(null);
+    setCost(null);
   };
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -197,7 +226,19 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className="badge bg-neutral-100 text-neutral-500">AI: off · Phase 1</span>
+            {settings && (
+              <span
+                className="badge bg-neutral-100 text-neutral-600"
+                title={`${settings.provider} · ${settings.provider === 'openai' ? settings.openaiModelId : settings.geminiModelId}`}
+              >
+                {settings.provider === 'openai' ? 'OpenAI' : 'Gemini'} ·{' '}
+                {settings.keys[settings.provider].hasKey ? (
+                  <span className="text-emerald-600">● key set</span>
+                ) : (
+                  <span className="text-neutral-400">○ no key</span>
+                )}
+              </span>
+            )}
             <button className="btn-ghost" onClick={() => setSettingsOpen(true)}>
               Settings
             </button>
@@ -268,10 +309,14 @@ export default function App() {
       {/* Sticky action bar */}
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-neutral-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-6 py-3">
-          <button className="btn-primary" disabled={!canGenerate} onClick={generateAll} title={canGenerate ? '' : 'Enter a SKU and add images first'}>
+          <button className="btn-primary" disabled={!canGenerate} onClick={requestGenerate} title={canGenerate ? '' : 'Enter a SKU and add images first'}>
             {phase === 'generating' ? 'Generating…' : 'Generate'}
           </button>
-          <span className="text-[11px] text-neutral-400">Deterministic framing — 0 AI calls, no cost (Phase 1).</span>
+          <span className="text-[11px] text-neutral-400">
+            {cost
+              ? `Run cost: $${cost.costUSD.toFixed(2)} · ${cost.aiCalls} AI calls`
+              : 'Deterministic framing — AI clean-up activates in Phase 3.'}
+          </span>
 
           <div className="ml-auto flex items-center gap-2">
             <input
@@ -293,7 +338,10 @@ export default function App() {
         </div>
       </div>
 
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} config={config} />
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} config={config} onChanged={loadSettings} />
+      {pendingEstimate && (
+        <ConfirmBatchModal estimate={pendingEstimate} onConfirm={runGenerate} onCancel={() => setPendingEstimate(null)} />
+      )}
       {conflict && (
         <ConflictModal
           conflicts={conflict.conflicts}

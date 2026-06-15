@@ -16,18 +16,20 @@ folder and does not touch the surrounding repository.
 
 ---
 
-## Status — Phase 1 ✅ (skeleton, no AI)
+## Status — Phases 1–2 ✅
 
 | Phase | Scope | State |
 |------|-------|-------|
 | **1** | Ingest + normalize, SKU + validation, reorder grid, slugify + contiguous numbering, overwrite/skip/version, auto-clear (not on error), ZIP, manifest CSV, **deterministic 6:7 white-pad framing** | **Done** |
-| 2 | Settings panel (provider switch, masked key, keychain, "Test key"), `AiProvider` for Gemini + OpenAI, cost estimate + retry/backoff | Planned |
+| **2** | **Settings panel** (provider switch, masked key, secure storage, **live "Test key"**, editable model id), **`AiProvider` wired for Gemini + OpenAI**, cost estimate + confirm gate + retry/backoff | **Done** |
 | 3 | Watermark detect → masked inpaint (+ manual box/brush) → texture-preserving upscale; SSIM fidelity guard | Planned |
 | 4 | Subject mask + fixed negative-space; solid-fill vs generative-outpaint; mask-failure & clipped-source handling; subject-scope toggle | Planned |
 | 5 | Backblaze B2 + idempotent WooCommerce media upload (behind flags) | Stubbed |
 
-The interfaces and config keys for later phases already exist (`backend/src/ai/provider.ts`,
-feature flags in `config.ts`) so wiring them up doesn't require a refactor.
+The AI providers are wired and key-tested, but **the pipeline still makes zero AI
+calls** — masked inpaint/outpaint usage lands in phases 3–4. The `cleanup()` /
+`outpaint()` methods are implemented and ready; only the detection + orchestration
+that *calls* them is pending.
 
 ---
 
@@ -108,9 +110,34 @@ Key defaults: `outputWidth 1714`, `outputHeight 2000`, `negativeSpaceRatio 0.82`
 
 ## Secrets
 
-**No secrets are ever committed or logged.** API keys are stored in the OS keychain
-or a gitignored local app-data file (Settings panel, phase 2). `.env` is a fallback
-only — copy [`.env.example`](./.env.example) to `.env` (gitignored) if you use it.
+**No secrets are ever committed or logged.** API keys are stored in a `0600` file in
+your OS app-data folder (`~/Library/Application Support/MazyoudListingForge` on macOS,
+`~/.config/mazyoud-listing-forge` on Linux, `%APPDATA%` on Windows) — **outside the
+repo**, so it can't be committed. `.env` is a fallback only — copy
+[`.env.example`](./.env.example) to `.env` (gitignored) if you use it. The in-app
+Settings field is the primary path. `GET /api/settings` only ever reports whether a
+key is present (and its source); it never returns the key value.
+
+## AI provider & Settings (Phase 2)
+
+Open **Settings** (top-right). For each provider you can:
+
+- **Pick the active provider** — Gemini (Nano Banana Pro / `gemini-3-pro-image-preview`)
+  or OpenAI (`gpt-image-1`). Gemini is the recommended default for fabric clarity.
+- **Paste an API key** (masked) → **Save**, **Clear**, and **Test key** (one cheap
+  live validation call that reports success/failure clearly).
+- **Edit the model id** to switch versions without a rebuild (e.g. `gpt-image-1.5`,
+  `gpt-image-2`).
+
+Both providers sit behind one `AiProvider` interface (`cleanup(image, mask?)`,
+`outpaint(image, region)`, `testKey()`) with **retry + exponential backoff** on
+transient (429/5xx/network) failures. OpenAI output caps ~1536px long side, so larger
+targets get a `sharp` Lanczos upscale automatically.
+
+Before a large batch (or any batch with AI calls) the app shows an **estimate**
+(images · AI calls · rough cost) and **requires confirmation**; a **running cost
+tally** is shown after each run. Pricing is a rough, editable estimate in `config.ts`
+(`aiPricing`) — image-generation pricing is usage-based and changes.
 
 ---
 

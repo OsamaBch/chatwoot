@@ -44,3 +44,34 @@ export interface PipelineConfig {
 }
 
 export type ConflictPolicy = 'overwrite' | 'skip' | 'version';
+
+export type AiProviderName = 'gemini' | 'openai';
+export type KeySource = 'saved' | 'env' | 'none';
+export interface KeyStatus {
+  hasKey: boolean;
+  source: KeySource;
+}
+
+export interface AppSettings {
+  provider: AiProviderName;
+  geminiModelId: string;
+  openaiModelId: string;
+  keys: { gemini: KeyStatus; openai: KeyStatus };
+  pricing: { geminiPerImageUSD: number; openaiPerImageUSD: number };
+  openaiMaxLongSide: number;
+}
+
+export interface Estimate {
+  images: number;
+  provider: AiProviderName;
+  aiCalls: number;
+  estCostUSD: number;
+  perImageUSD: number;
+  requiresConfirm: boolean;
+  note?: string;
+}
+
+export interface CostTally {
+  aiCalls: number;
+  costUSD: number;
+}

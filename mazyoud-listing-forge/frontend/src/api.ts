@@ -1,4 +1,13 @@
-import type { ConflictPolicy, ImageRecord, PipelineConfig } from './types';
+import type {
+  AiProviderName,
+  AppSettings,
+  ConflictPolicy,
+  CostTally,
+  Estimate,
+  ImageRecord,
+  KeyStatus,
+  PipelineConfig,
+} from './types';
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -80,5 +89,66 @@ export const api = {
 
   async reset(): Promise<void> {
     await fetch('/api/reset', { method: 'POST' });
+  },
+
+  // ── Settings / provider (phase 2) ──────────────────────────────────────────
+  async getSettings(): Promise<AppSettings> {
+    return json(await fetch('/api/settings'));
+  },
+
+  async saveSettings(patch: {
+    provider?: AiProviderName;
+    geminiModelId?: string;
+    openaiModelId?: string;
+  }): Promise<void> {
+    await json(
+      await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      }),
+    );
+  },
+
+  async saveKey(provider: AiProviderName, key: string): Promise<KeyStatus & { ok: boolean }> {
+    return json(
+      await fetch('/api/settings/key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, key }),
+      }),
+    );
+  },
+
+  async clearKey(provider: AiProviderName): Promise<void> {
+    await fetch('/api/settings/key', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider }),
+    });
+  },
+
+  async testKey(provider: AiProviderName): Promise<{ ok: boolean; message: string }> {
+    return json(
+      await fetch('/api/settings/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider }),
+      }),
+    );
+  },
+
+  async estimate(order: string[]): Promise<Estimate> {
+    return json(
+      await fetch('/api/estimate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order }),
+      }),
+    );
+  },
+
+  async getCost(): Promise<CostTally> {
+    return json(await fetch('/api/estimate/cost'));
   },
 };

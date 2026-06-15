@@ -20,6 +20,8 @@ export interface Config {
   geminiModelId: string;
   /** OpenAI image model — gpt-image-1 (edits/inpaint). Editable in Settings. */
   openaiModelId: string;
+  /** OpenAI image output caps ~1536px long side; larger targets get a sharp Lanczos upscale. */
+  openaiMaxLongSide: number;
 
   // ── Output canvas / framing ─────────────────────────────────────────────────
   /** Informational; outputWidth/outputHeight are authoritative. */
@@ -54,6 +56,16 @@ export interface Config {
   /** SSIM drift threshold (outside the edited region) above which we flag for review. */
   fidelityDiffThreshold: number;
 
+  // ── AI runtime (phase 2) ────────────────────────────────────────────────────
+  /** Max retries for a failed AI call. */
+  aiMaxRetries: number;
+  /** Base delay (ms) for exponential backoff: base * 2^attempt (+ jitter). */
+  aiRetryBaseMs: number;
+  /** Rough per-image cost estimates (USD) — display only, editable. */
+  aiPricing: { geminiPerImageUSD: number; openaiPerImageUSD: number };
+  /** Batches at/above this size require an explicit confirm before generating. */
+  largeBatchConfirmThreshold: number;
+
   // ── Feature flags (phase 5 stubs) ───────────────────────────────────────────
   enableBackblaze: boolean;
   enableWooUpload: boolean;
@@ -65,6 +77,7 @@ export const config: Config = {
   // these are sane, overridable defaults so nothing is hardcoded behind a rebuild.
   geminiModelId: 'gemini-3-pro-image-preview',
   openaiModelId: 'gpt-image-1',
+  openaiMaxLongSide: 1536,
 
   aspectRatio: '6:7',
   outputWidth: 1714,
@@ -85,6 +98,12 @@ export const config: Config = {
 
   maxOutpaintFraction: 0.25,
   fidelityDiffThreshold: 0.06,
+
+  aiMaxRetries: 4,
+  aiRetryBaseMs: 500,
+  // Rough, editable estimates (image-generation pricing is usage-based and changes).
+  aiPricing: { geminiPerImageUSD: 0.15, openaiPerImageUSD: 0.17 },
+  largeBatchConfirmThreshold: 24,
 
   enableBackblaze: false,
   enableWooUpload: false,
