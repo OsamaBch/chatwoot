@@ -56,7 +56,10 @@ export default function ImageCard({
             <span className="badge bg-neutral-100 text-neutral-600">#{position}</span>
           )}
         </div>
-        <StatusBadge status={image.status} />
+        <div className="flex items-center gap-1.5">
+          {image.aiUsed && <span className="badge bg-violet-100 text-violet-700">AI cleaned</span>}
+          <StatusBadge status={image.status} />
+        </div>
       </div>
 
       {/* before / after */}

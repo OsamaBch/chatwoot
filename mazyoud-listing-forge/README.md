@@ -16,20 +16,21 @@ folder and does not touch the surrounding repository.
 
 ---
 
-## Status — Phases 1–2 ✅
+## Status — Phases 1–3 ✅
 
 | Phase | Scope | State |
 |------|-------|-------|
-| **1** | Ingest + normalize, SKU + validation, reorder grid, slugify + contiguous numbering, overwrite/skip/version, auto-clear (not on error), ZIP, manifest CSV, **deterministic 6:7 white-pad framing** | **Done** |
-| **2** | **Settings panel** (provider switch, masked key, secure storage, **live "Test key"**, editable model id), **`AiProvider` wired for Gemini + OpenAI**, cost estimate + confirm gate + retry/backoff | **Done** |
-| 3 | Watermark detect → masked inpaint (+ manual box/brush) → texture-preserving upscale; SSIM fidelity guard | Planned |
-| 4 | Subject mask + fixed negative-space; solid-fill vs generative-outpaint; mask-failure & clipped-source handling; subject-scope toggle | Planned |
+| **1** | Ingest + normalize, SKU + validation, reorder grid, slugify + contiguous numbering, overwrite/skip/version, auto-clear (not on error), ZIP, manifest CSV, deterministic 6:7 framing | **Done** |
+| **2** | Settings panel (provider switch, masked key, secure storage, live "Test key", editable model id), `AiProvider` for Gemini + OpenAI, cost estimate + confirm gate + retry/backoff, consumption dashboard | **Done** |
+| **3** | **Watermark/logo detect → masked inpaint (crop & paste-back) → SSIM fidelity guard → Review queue** | **Done** |
+| ~3.5~ | Subject-aware framing + background extension (pulled forward) | **Done** |
+| 4 | Full subject mask; generative outpaint for textured backgrounds; clipped-source handling; subject-scope toggle; manual box/brush UI | Partial |
 | 5 | Backblaze B2 + idempotent WooCommerce media upload (behind flags) | Stubbed |
 
-The AI providers are wired and key-tested, but **the pipeline still makes zero AI
-calls** — masked inpaint/outpaint usage lands in phases 3–4. The `cleanup()` /
-`outpaint()` methods are implemented and ready; only the detection + orchestration
-that *calls* them is pending.
+Watermark clean-up is automatic and only runs on images where a watermark is
+detected and a key is set (≈80% of images skip AI). The garment is kept
+pixel-identical outside the edited box (crop → inpaint → paste-back), verified by
+an SSIM check; drift routes the image to the Review queue.
 
 ---
 
@@ -73,10 +74,14 @@ npm run smoke           # end-to-end pipeline check (normalize → frame → nam
    (< 600px long side) and chart-looking images get a soft warning.
 3. **Reorder** the grid by dragging. Position 1 is the **hero** (coral border + ★ badge);
    filenames re-preview live.
-4. **Generate** — deterministic framing to an exact **1714×2000 (6:7)** white canvas,
-   product centered at the configured negative-space ratio (no stretch, no crop),
-   then mozjpeg progressive JPEG encoded toward `≤ 350 KB` with a quality floor of 80.
-   (Phase 1 makes **zero AI calls** — there is nothing to pay for.)
+4. **Generate** — per image: **detect** a watermark/logo; if found (and a key is set)
+   **masked-inpaint** just that region (crop → AI clean → paste-back, so the garment
+   stays pixel-identical elsewhere) with an **SSIM fidelity guard**; then **subject-aware
+   framing** — measure the product, scale it to the negative-space ratio, center it on
+   an exact **1714×2000 (6:7)** canvas, and extend the photo's own near-uniform
+   background seamlessly (no white bands; no stretch, no crop). Finally mozjpeg
+   progressive JPEG encoded toward `≤ 350 KB` (quality floor 80). Images with no
+   watermark make **zero AI calls**.
 5. **Review queue** surfaces only the exceptions (low source, flagged, failed) for
    accept / re-run / exclude.
 6. **Export** — _Download ZIP_ (`{SKU}_listing.zip`) or _Write to folder_. Filenames

@@ -1,20 +1,34 @@
 import { Router } from 'express';
 import { readFile, writeFile } from 'node:fs/promises';
 import { frameImage } from '../services/framing';
+import { detectWatermarks, type Box } from '../services/watermark';
+import { applyCleanup } from '../services/cleanup';
 import { store, normalizedPath, processedPath } from '../services/store';
+import { getSettings } from '../services/settings';
+import { getProvider, costTally } from '../ai';
 import { config } from '../config';
 
 const router = Router();
 
 /**
- * Frame a set of images (phase 1 = deterministic 6:7 white-pad). Body:
- *   { sku: string, order?: string[] }
- * `order` lets the frontend reprocess a single image (order:[id]) for "re-run".
- * Runs with bounded concurrency. Filenames are NOT assigned here — that happens
- * at export time from the final order over successful images only.
+ * Phase 3 pipeline per image: detect watermark/logo → masked inpaint (crop &
+ * paste-back, garment untouched elsewhere) → deterministic 6:7 framing.
+ *
+ * Body: { sku, order?, boxes?, forceClean?, skipClean? }
+ *  - boxes:      manual watermark regions (full-res px) for the image(s) in `order`
+ *  - forceClean: clean even if auto-detection is uncertain (needs a region)
+ *  - skipClean:  bypass AI clean-up entirely (deterministic framing only)
+ * Clean-up is skipped automatically when an image has no watermark (~80%), or
+ * when no API key is set (the image is then flagged for review, never charged).
  */
 router.post('/', async (req, res) => {
-  const { sku, order } = req.body as { sku?: string; order?: string[] };
+  const { sku, order, boxes, forceClean, skipClean } = req.body as {
+    sku?: string;
+    order?: string[];
+    boxes?: Box[];
+    forceClean?: boolean;
+    skipClean?: boolean;
+  };
   if (!sku || !sku.trim()) {
     res.status(400).json({ error: 'SKU is required before generating' });
     return;
@@ -25,29 +39,56 @@ router.post('/', async (req, res) => {
     return;
   }
 
+  const settings = getSettings();
+  const pricePerEdit = settings.provider === 'openai' ? settings.pricing.openaiPerImageUSD : settings.pricing.geminiPerImageUSD;
+  const manualBoxes = Array.isArray(boxes) ? boxes : [];
+
   const queue = [...ids];
   const worker = async () => {
     for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
       const rec = store.get(id);
       if (!rec) continue;
+      const flags: string[] = [];
+      let aiUsed = false;
       try {
+        let img: Buffer = await readFile(normalizedPath(id));
+
+        // ── AI clean-up (masked inpaint) ──────────────────────────────────────
+        if (!skipClean) {
+          const regions = manualBoxes.length ? manualBoxes : (await detectWatermarks(img)).boxes;
+          if (regions.length && (forceClean || manualBoxes.length || regions.length)) {
+            try {
+              rec.status = 'cleaning';
+              const provider = getProvider();
+              const cl = await applyCleanup(img, regions, provider);
+              img = cl.buffer;
+              aiUsed = cl.aiCalls > 0;
+              flags.push(...cl.flags);
+              if (cl.aiCalls > 0) costTally.add(cl.aiCalls, cl.aiCalls * pricePerEdit);
+            } catch {
+              // No key / provider unavailable: never charge, surface for review.
+              flags.push('watermark-detected-no-key');
+            }
+          }
+        }
+
+        // ── Deterministic framing ─────────────────────────────────────────────
         rec.status = 'framing';
-        const input = await readFile(normalizedPath(id));
-        const framed = await frameImage(input);
+        const framed = await frameImage(img);
         await writeFile(processedPath(id), framed.buffer);
         rec.processedUrl = `/files/processed/${id}.jpg?ts=${Date.now()}`;
         rec.outputWidth = framed.width;
         rec.outputHeight = framed.height;
         rec.outputBytes = framed.bytes;
         rec.outputQuality = framed.quality;
-        rec.flags = framed.flags;
-        rec.aiUsed = false;
+        rec.aiUsed = aiUsed;
         rec.error = undefined;
-        rec.needsReview = rec.warnings.length > 0 || framed.flags.length > 0;
+        rec.flags = [...flags, ...framed.flags];
+        rec.needsReview = rec.warnings.length > 0 || rec.flags.length > 0;
         rec.status = rec.needsReview ? 'review' : 'done';
       } catch (e) {
         rec.status = 'failed';
-        rec.error = e instanceof Error ? e.message : 'Framing failed';
+        rec.error = e instanceof Error ? e.message : 'Processing failed';
       }
     }
   };

@@ -64,6 +64,7 @@ export interface AppSettings {
 export interface Estimate {
   images: number;
   provider: AiProviderName;
+  watermarked?: number;
   aiCalls: number;
   estCostUSD: number;
   perImageUSD: number;

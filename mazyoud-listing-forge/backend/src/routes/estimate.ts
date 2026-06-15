@@ -1,37 +1,57 @@
 import { Router } from 'express';
+import { readFile } from 'node:fs/promises';
 import { config } from '../config';
 import { getSettings } from '../services/settings';
 import { costTally } from '../ai';
-import { store } from '../services/store';
+import { store, normalizedPath } from '../services/store';
+import { detectWatermarks } from '../services/watermark';
 
 const router = Router();
 
 /**
- * Estimate AI usage/cost for a batch before running it. Phase 2's deterministic
- * pipeline makes 0 AI calls by default; the `forceCleanup`/`forceOutpaint` counts
- * (phase 3/4 toggles) drive the estimate. The confirm gate is live now.
+ * Estimate AI usage/cost BEFORE running a batch by actually detecting watermarks
+ * across the images, so the confirm gate reflects real predicted spend (most
+ * images have none → 0 AI cost). Cheap: detection runs on a small downscale.
  */
-router.post('/', (req, res) => {
-  const { order, forceCleanup = 0, forceOutpaint = 0 } = req.body as {
-    order?: string[];
-    forceCleanup?: number;
-    forceOutpaint?: number;
-  };
-  const images = Array.isArray(order) && order.length ? order.length : store.all().length;
+router.post('/', async (req, res) => {
+  const { order, skipClean } = req.body as { order?: string[]; skipClean?: boolean };
+  const ids = Array.isArray(order) && order.length ? order : store.all().map((r) => r.id);
+  const images = ids.length;
+
   const settings = getSettings();
   const provider = settings.provider;
   const perImageUSD = provider === 'openai' ? settings.pricing.openaiPerImageUSD : settings.pricing.geminiPerImageUSD;
-  const aiCalls = Math.max(0, forceCleanup) + Math.max(0, forceOutpaint);
-  const estCostUSD = +(aiCalls * perImageUSD).toFixed(2);
 
+  let aiCalls = 0;
+  let watermarked = 0;
+  if (!skipClean) {
+    for (const id of ids) {
+      if (!store.get(id)) continue;
+      try {
+        const { boxes } = await detectWatermarks(await readFile(normalizedPath(id)));
+        if (boxes.length) {
+          watermarked += 1;
+          aiCalls += boxes.length;
+        }
+      } catch {
+        /* skip unreadable */
+      }
+    }
+  }
+
+  const estCostUSD = +(aiCalls * perImageUSD).toFixed(2);
   res.json({
     images,
     provider,
+    watermarked,
     aiCalls,
     estCostUSD,
     perImageUSD,
     requiresConfirm: images >= config.largeBatchConfirmThreshold || aiCalls > 0,
-    note: aiCalls === 0 ? 'Deterministic framing only — AI clean-up activates in Phase 3.' : undefined,
+    note:
+      aiCalls === 0
+        ? 'No watermarks detected — deterministic framing only, no AI cost.'
+        : `${watermarked} image(s) look watermarked → ~${aiCalls} AI edit(s).`,
   });
 });
 

@@ -14,6 +14,9 @@ export default function ConfirmBatchModal({ estimate, onConfirm, onCancel }: Pro
         <dl className="my-4 space-y-1 text-sm">
           <Line label="Images" value={String(estimate.images)} />
           <Line label="Provider" value={estimate.provider} />
+          {typeof estimate.watermarked === 'number' && (
+            <Line label="Watermarked" value={`${estimate.watermarked} of ${estimate.images}`} />
+          )}
           <Line label="Estimated AI calls" value={String(estimate.aiCalls)} />
           <Line
             label="Estimated cost"
