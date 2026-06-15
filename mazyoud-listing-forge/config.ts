@@ -31,6 +31,12 @@ export interface Config {
   /** Product longest side as a fraction of the canvas (negative-space control). */
   negativeSpaceRatio: number;
   backgroundColor: string;
+  /**
+   * true  → measure the product and extend the photo's own (near-uniform)
+   *         background to fill the 6:7 canvas (no white bands; garment untouched).
+   * false → pad with backgroundColor (white).
+   */
+  extendBackground: boolean;
 
   // ── Encoding ────────────────────────────────────────────────────────────────
   outputFormat: 'jpeg';
@@ -84,6 +90,7 @@ export const config: Config = {
   outputHeight: 2000,
   negativeSpaceRatio: 0.82,
   backgroundColor: '#FFFFFF',
+  extendBackground: true,
 
   outputFormat: 'jpeg',
   jpegMaxKB: 350,
