@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+**/node_modules/
+
+# build output
+dist/
+**/dist/
+
+# runtime working data + exports (never commit generated images)
+backend/.data/
+output/
+*.zip
+
+# secrets — NEVER commit
+.env
+.env.local
+*.local
+secrets.json
+.app-data/
+
+# logs / misc
+*.log
+.DS_Store
+
+# Re-include our npm lockfiles (the repo-root .gitignore ignores package-lock.json
+# globally because Chatwoot uses pnpm; this app uses npm and wants them committed).
+!package-lock.json
+

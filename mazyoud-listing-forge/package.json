@@ -1,0 +1,19 @@
+{
+  "name": "mazyoud-listing-forge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local desktop image-prep studio that turns raw supplier product photos into clean, website-ready 6:7 listing images (catalog fidelity guaranteed).",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n backend,frontend -c magenta,cyan \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "install:all": "npm install && npm --prefix backend install && npm --prefix frontend install",
+    "build": "npm --prefix backend run build && npm --prefix frontend run build",
+    "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck",
+    "smoke": "npm --prefix backend run smoke"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
