@@ -5,8 +5,11 @@ import { detectWatermarks, type Box } from '../services/watermark';
 import { applyCleanup } from '../services/cleanup';
 import { store, normalizedPath, processedPath } from '../services/store';
 import { getSettings } from '../services/settings';
-import { getProvider, costTally } from '../ai';
+import { getProvider, costTally, type AiProvider } from '../ai';
 import { config } from '../config';
+
+const OUTPAINT_PROMPT =
+  'Outpaint ONLY the background to fill the transparent margins, matching the existing background colour and texture exactly. Do not add, move, remove, or alter any product, and do not add any text, logos, or watermarks.';
 
 const router = Router();
 
@@ -42,6 +45,20 @@ router.post('/', async (req, res) => {
   const pricePerEdit = settings.provider === 'openai' ? settings.pricing.openaiPerImageUSD : settings.pricing.geminiPerImageUSD;
   const manualBoxes = Array.isArray(boxes) ? boxes : [];
 
+  // Resolve the provider once (null = no key). Used for both watermark clean-up
+  // and background outpaint.
+  let provider: AiProvider | null = null;
+  try {
+    provider = getProvider();
+  } catch {
+    provider = null;
+  }
+  const outpaintFn =
+    provider && config.extendBackground
+      ? async (rgba: Buffer, canvas: { width: number; height: number }) =>
+          (await provider!.outpaint({ image: rgba, region: { left: 0, top: 0, width: canvas.width, height: canvas.height }, canvas, prompt: OUTPAINT_PROMPT })).image
+      : undefined;
+
   const queue = [...ids];
   const worker = async () => {
     for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
@@ -61,24 +78,29 @@ router.post('/', async (req, res) => {
               ? (await detectWatermarks(img)).boxes
               : [];
           if (regions.length) {
-            try {
+            if (provider) {
               rec.status = 'cleaning';
-              const provider = getProvider();
               const cl = await applyCleanup(img, regions, provider);
               img = cl.buffer;
-              aiUsed = cl.aiCalls > 0;
+              if (cl.aiCalls > 0) {
+                aiUsed = true;
+                costTally.add(cl.aiCalls, cl.aiCalls * pricePerEdit);
+              }
               flags.push(...cl.flags);
-              if (cl.aiCalls > 0) costTally.add(cl.aiCalls, cl.aiCalls * pricePerEdit);
-            } catch {
-              // No key / provider unavailable: never charge, surface for review.
+            } else {
+              // No key: never charge, surface for review.
               flags.push('watermark-detected-no-key');
             }
           }
         }
 
-        // ── Deterministic framing ─────────────────────────────────────────────
+        // ── Framing (+ generative background outpaint when a key is set) ───────
         rec.status = 'framing';
-        const framed = await frameImage(img);
+        const framed = await frameImage(img, { outpaint: outpaintFn });
+        if (framed.aiUsed) {
+          aiUsed = true;
+          costTally.add(1, pricePerEdit);
+        }
         await writeFile(processedPath(id), framed.buffer);
         rec.processedUrl = `/files/processed/${id}.jpg?ts=${Date.now()}`;
         rec.outputWidth = framed.width;

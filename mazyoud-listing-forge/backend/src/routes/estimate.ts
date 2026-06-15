@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { readFile } from 'node:fs/promises';
 import { config } from '../config';
 import { getSettings } from '../services/settings';
+import { keyStatus } from '../services/secrets';
 import { costTally } from '../ai';
 import { store, normalizedPath } from '../services/store';
 import { detectWatermarks } from '../services/watermark';
@@ -21,10 +22,11 @@ router.post('/', async (req, res) => {
   const settings = getSettings();
   const provider = settings.provider;
   const perImageUSD = provider === 'openai' ? settings.pricing.openaiPerImageUSD : settings.pricing.geminiPerImageUSD;
+  const hasKey = keyStatus(provider).hasKey;
 
   let aiCalls = 0;
   let watermarked = 0;
-  if (!skipClean && config.autoDetectWatermarks) {
+  if (!skipClean && config.autoDetectWatermarks && hasKey) {
     for (const id of ids) {
       if (!store.get(id)) continue;
       try {
@@ -39,7 +41,14 @@ router.post('/', async (req, res) => {
     }
   }
 
+  // Generative background outpaint runs on (nearly) every image when enabled + keyed.
+  const outpaintCalls = config.extendBackground && hasKey ? images : 0;
+  aiCalls += outpaintCalls;
+
   const estCostUSD = +(aiCalls * perImageUSD).toFixed(2);
+  const notes: string[] = [];
+  if (outpaintCalls) notes.push(`AI background outpaint on ~${outpaintCalls} image(s)`);
+  if (watermarked) notes.push(`${watermarked} watermarked`);
   res.json({
     images,
     provider,
@@ -48,10 +57,7 @@ router.post('/', async (req, res) => {
     estCostUSD,
     perImageUSD,
     requiresConfirm: images >= config.largeBatchConfirmThreshold || aiCalls > 0,
-    note:
-      aiCalls === 0
-        ? 'No watermarks detected — deterministic framing only, no AI cost.'
-        : `${watermarked} image(s) look watermarked → ~${aiCalls} AI edit(s).`,
+    note: aiCalls === 0 ? 'Deterministic framing only — no AI cost (set an API key to enable AI fill).' : notes.join(' · '),
   });
 });
 

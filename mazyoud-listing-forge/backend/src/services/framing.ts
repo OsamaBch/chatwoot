@@ -9,24 +9,36 @@ export interface FrameResult {
   bytes: number;
   quality: number;
   flags: string[];
+  aiUsed: boolean;
+}
+
+/** Fills the transparent margins of an RGBA canvas (generative outpaint). */
+export type OutpaintFn = (rgbaCanvas: Buffer, canvas: { width: number; height: number }) => Promise<Buffer>;
+
+export interface FrameOpts {
+  outpaint?: OutpaintFn;
 }
 
 /**
  * Subject-aware framing: measure the PRODUCT, scale it to the negative-space
- * ratio, center it on a 6:7 canvas, and (default) extend the photo's own
- * near-uniform background with a seamless solid fill so there are no white
- * bands. The garment is never cropped, stretched, or altered.
+ * ratio, center it on a 6:7 canvas, and fill any border needed to reach 6:7.
  *
- * Falls back to whole-image framing (flagged for review) when no clear subject
- * is found (e.g. white garment on white). Textured backgrounds that can't be
- * solid-filled seamlessly are flagged 'non-uniform-bg' (generative outpaint is
- * the phase-4 upgrade for those).
+ * Border fill:
+ *  - opts.outpaint provided → generative outpaint of the BACKGROUND ONLY: the
+ *    product is placed on a transparent canvas, the provider fills the margins to
+ *    match the background, then the product is pasted back so it's pixel-identical
+ *    (only the border is AI-generated). No duplication.
+ *  - otherwise → solid background-colour fill (deterministic, no AI).
+ * Many photos overfill 6:7 and just crop background (no border, no outpaint cost).
+ * The garment is never cropped, stretched, or altered. No clear subject (e.g.
+ * white-on-white) → whole-image framing flagged 'subject-not-detected'.
  */
-export async function frameImage(input: Buffer): Promise<FrameResult> {
+export async function frameImage(input: Buffer, opts: FrameOpts = {}): Promise<FrameResult> {
   const outW = config.outputWidth;
   const outH = config.outputHeight;
   const nsr = config.negativeSpaceRatio;
   const flags: string[] = [];
+  let aiUsed = false;
 
   const meta = await sharp(input).metadata();
   const sw = meta.width ?? outW;
@@ -70,16 +82,46 @@ export async function frameImage(input: Buffer): Promise<FrameResult> {
   const visW = Math.min(scaledW - srcLeft, outW - pasteLeft);
   const visH = Math.min(scaledH - srcTop, outH - pasteTop);
 
-  // NOTE: mirror/edge extension duplicates anything at the photo's edges
-  // (products, watermarks), so we use a solid background-colour fill here. A
-  // texture-continuing border is the generative-outpaint / background-removal
-  // upgrade (selectable next).
+  const padL = pasteLeft;
+  const padT = pasteTop;
+  const padR = outW - pasteLeft - visW;
+  const padB = outH - pasteTop - visH;
+  const needsExtend = padL > 1 || padT > 1 || padR > 1 || padB > 1;
+
+  const solidFill = (piece: Buffer): sharp.Sharp =>
+    sharp({ create: { width: outW, height: outH, channels: 3, background: fill } }).composite([
+      { input: piece, left: pasteLeft, top: pasteTop },
+    ]);
+
   let pipeline: sharp.Sharp;
   if (visW > 0 && visH > 0) {
     const piece = await sharp(scaled).extract({ left: srcLeft, top: srcTop, width: visW, height: visH }).toBuffer();
-    pipeline = sharp({ create: { width: outW, height: outH, channels: 3, background: fill } }).composite([
-      { input: piece, left: pasteLeft, top: pasteTop },
-    ]);
+
+    if (opts.outpaint && config.extendBackground && subj.found && needsExtend) {
+      // Generative outpaint of the BACKGROUND only. We place the product on a
+      // transparent canvas, let the provider fill the transparent margins to
+      // match the background, then paste the product back so the garment is
+      // pixel-identical (only the border is AI-generated).
+      try {
+        const base = await sharp({ create: { width: outW, height: outH, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+          .composite([{ input: piece, left: pasteLeft, top: pasteTop }])
+          .png()
+          .toBuffer();
+        let filled = await opts.outpaint(base, { width: outW, height: outH });
+        const fm = await sharp(filled).metadata();
+        if (fm.width !== outW || fm.height !== outH) {
+          filled = await sharp(filled).resize(outW, outH, { fit: 'fill', kernel: 'lanczos3' }).toBuffer();
+        }
+        // paste the product back over the AI border for fidelity
+        pipeline = sharp(filled).removeAlpha().composite([{ input: piece, left: pasteLeft, top: pasteTop }]);
+        aiUsed = true;
+      } catch {
+        flags.push('outpaint-failed');
+        pipeline = solidFill(piece);
+      }
+    } else {
+      pipeline = solidFill(piece);
+    }
   } else {
     pipeline = sharp({ create: { width: outW, height: outH, channels: 3, background: fill } });
   }
@@ -100,7 +142,7 @@ export async function frameImage(input: Buffer): Promise<FrameResult> {
   }
   if (out.length > maxBytes) flags.push(`over-size (${Math.round(out.length / 1024)}KB at quality floor ${floor})`);
 
-  return { buffer: out, width: outW, height: outH, bytes: out.length, quality: q, flags };
+  return { buffer: out, width: outW, height: outH, bytes: out.length, quality: q, flags, aiUsed };
 }
 
 function hexToRgb(hex: string): Rgb {
