@@ -44,11 +44,15 @@ export function verifySession(token: string): SessionPayload | null {
   }
 }
 
-export function setSessionCookie(res: Response, token: string): void {
+export function setSessionCookie(req: Request, res: Response, token: string): void {
   res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: config.appOrigin.startsWith('https://'),
+    // Secure only over real HTTPS. req.secure reflects the actual scheme
+    // (and Caddy's X-Forwarded-Proto via `trust proxy`), so it's true in
+    // production behind Caddy and false on http://localhost — which lets dev
+    // logins persist (Safari/Firefox reject Secure cookies over http).
+    secure: req.secure,
     maxAge: config.sessionTtlSeconds * 1000,
     path: '/',
   });
@@ -146,11 +150,11 @@ export function verifyAdmin(token: string): boolean {
   }
 }
 
-export function setAdminCookie(res: Response, token: string): void {
+export function setAdminCookie(req: Request, res: Response, token: string): void {
   res.cookie(ADMIN_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: config.appOrigin.startsWith('https://'),
+    secure: req.secure, // see setSessionCookie — Secure only over real HTTPS
     maxAge: config.sessionTtlSeconds * 1000,
     path: '/',
   });

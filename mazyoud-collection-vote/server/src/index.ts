@@ -158,7 +158,7 @@ app.post(
     }
     const sid = newSessionId();
     const token = signSession({ voter: voter.name, sid });
-    setSessionCookie(res, token);
+    setSessionCookie(req, res, token);
 
     const votes = await aggregator.votesCached();
     const votedKeys = [...resolveVoterVotes(votes, voter.name).keys()];
@@ -444,7 +444,7 @@ app.post(
       res.status(401).json({ error: 'invalid_credentials' });
       return;
     }
-    setAdminCookie(res, signAdmin());
+    setAdminCookie(req, res, signAdmin());
     res.json({ ok: true });
   }),
 );
