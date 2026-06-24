@@ -46,3 +46,18 @@ export interface Progress {
   fullyDecided: number;
   leaderboard: { voter: string; voted: number }[];
 }
+
+export interface WorkbookMeta {
+  sheetName: string;
+  originalName: string;
+  uploadedAt: string;
+  productCount: number;
+}
+
+export interface AdminStatus {
+  backend: string;
+  hasWorkbook: boolean;
+  meta: WorkbookMeta | null;
+  productCount: number;
+  voters: { name: string; active: boolean }[];
+}

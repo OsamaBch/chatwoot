@@ -1,16 +1,27 @@
 import { config } from './config';
+import { DemoRepo } from './sheets/DemoRepo';
 import { GoogleSheetsRepo } from './sheets/GoogleSheetsRepo';
 import { N8nWebhookRepo } from './sheets/N8nWebhookRepo';
 import type { SheetsRepo } from './sheets/SheetsRepo';
+import { XlsxRepo } from './store/XlsxRepo';
 
 /** Construct the configured storage backend. */
 export function createRepo(): SheetsRepo {
-  if (config.dataBackend === 'n8n') {
-    console.log('[bootstrap] DATA_BACKEND=n8n -> N8nWebhookRepo');
-    return new N8nWebhookRepo();
+  switch (config.dataBackend) {
+    case 'google':
+      console.log('[bootstrap] DATA_BACKEND=google -> GoogleSheetsRepo');
+      return new GoogleSheetsRepo();
+    case 'n8n':
+      console.log('[bootstrap] DATA_BACKEND=n8n -> N8nWebhookRepo');
+      return new N8nWebhookRepo();
+    case 'demo':
+      console.log('[bootstrap] DATA_BACKEND=demo -> DemoRepo (in-memory, no setup)');
+      return new DemoRepo();
+    case 'xlsx':
+    default:
+      console.log('[bootstrap] DATA_BACKEND=xlsx -> XlsxRepo (upload + local store)');
+      return new XlsxRepo();
   }
-  console.log('[bootstrap] DATA_BACKEND=google -> GoogleSheetsRepo');
-  return new GoogleSheetsRepo();
 }
 
 /**

@@ -3,8 +3,10 @@ import { ApiError, api } from '../api';
 
 export function Login({
   onLoggedIn,
+  onAdmin,
 }: {
   onLoggedIn: (voter: string, votedKeys: string[]) => void;
+  onAdmin: () => void;
 }) {
   const [voters, setVoters] = useState<string[]>([]);
   const [name, setName] = useState('');
@@ -111,6 +113,10 @@ export function Login({
         className="w-full rounded-2xl bg-keep px-4 py-4 text-lg font-bold text-white shadow-card transition active:scale-[0.99] disabled:opacity-40"
       >
         {busy ? 'Signing in…' : 'Enter'}
+      </button>
+
+      <button onClick={onAdmin} className="text-center text-xs text-neutral-600 underline">
+        admin
       </button>
     </div>
   );

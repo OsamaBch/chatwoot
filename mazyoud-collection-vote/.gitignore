@@ -8,6 +8,10 @@ server/public/
 web/dist/
 *.tsbuildinfo
 
+# local data store (xlsx backend: uploaded workbook, votes, voters)
+server/data/
+data/
+
 # env & secrets
 .env
 *.local

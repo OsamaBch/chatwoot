@@ -1,6 +1,8 @@
 **/node_modules
 server/dist
 server/public
+server/data
+data
 web/dist
 .env
 *.local

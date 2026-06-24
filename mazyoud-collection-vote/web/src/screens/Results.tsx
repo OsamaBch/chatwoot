@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, formatPrice } from '../api';
+import { api, formatPrice, imgSrc } from '../api';
 import type { Aggregate, Verdict } from '../types';
 
 const VERDICT_CLS: Record<Verdict, string> = {
@@ -45,7 +45,7 @@ export function Results({ onBack }: { onBack: () => void }) {
             <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-neutral-800">
               {r.image_url && (
                 <img
-                  src={`/img?u=${encodeURIComponent(r.image_url)}`}
+                  src={imgSrc(r.image_url)}
                   alt=""
                   className="h-full w-full object-cover"
                   loading="lazy"

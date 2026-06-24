@@ -13,19 +13,29 @@ import {
   resolveVoterVotes,
   tally,
 } from './aggregate';
+import multer from 'multer';
 import {
+  adminConfigured,
   authenticateVoter,
+  checkAdminPassword,
+  clearAdminCookie,
   clearSessionCookie,
   newSessionId,
+  preparePin,
+  requireAdmin,
+  requireAnyAuth,
   requireAuth,
+  setAdminCookie,
   setSessionCookie,
+  signAdmin,
   signSession,
 } from './auth';
 import { config } from './config';
 import { bootstrap, createRepo } from './bootstrap';
 import { imageProxyHandler } from './imageProxy';
+import { XlsxRepo } from './store/XlsxRepo';
 import type { VoteValue } from './config';
-import type { Product, ResultRow, VoteRow } from './sheets/types';
+import type { Product, ResultRow, Voter, VoteRow } from './sheets/types';
 
 // ---------------------------------------------------------------------------
 // Wiring
@@ -44,6 +54,15 @@ async function refreshProducts(force = false): Promise<Product[]> {
 }
 
 const aggregator = new Aggregator(repo, (k) => productByKey.get(k));
+
+// Admin file operations (upload / export / voter CRUD) are specific to the
+// xlsx backend. Null in google/n8n/demo modes → those routes return 400.
+const xlsxRepo: XlsxRepo | null = repo instanceof XlsxRepo ? repo : null;
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 40 * 1024 * 1024 }, // 40 MB
+});
 
 // ---------------------------------------------------------------------------
 // App
@@ -180,7 +199,7 @@ app.get(
     const items = filtered.map((p) => ({
       product_key: p.product_key,
       row_anchor: p.row_anchor,
-      image: p.image_url ? `/img?u=${encodeURIComponent(p.image_url)}` : null,
+      image: imageSrc(p.image_url),
       price: p.price,
       category: p.category ?? '',
       gender: p.gender ?? '',
@@ -342,7 +361,7 @@ app.post(
 // ---------------------------------------------------------------------------
 app.get(
   '/api/progress',
-  requireAuth,
+  requireAnyAuth,
   asyncH(async (_req, res) => {
     const products = await refreshProducts(false);
     const votes = await aggregator.votesCached();
@@ -374,17 +393,11 @@ app.get(
 
 app.get(
   '/api/results',
-  requireAuth,
+  requireAnyAuth,
   asyncH(async (_req, res) => {
     const products = await refreshProducts(false);
     const votes = await aggregator.votesCached();
-    const rows = products.map((p) => {
-      // Compute live so the dashboard is correct even before debounced writes flush.
-      const resolved = resolveProductVotes(votes, p.product_key);
-      return buildLiveResult(p, resolved);
-    });
-    rows.sort((a, b) => b.net_score - a.net_score);
-    res.json({ results: rows });
+    res.json({ results: computeAllResults(products, votes) });
   }),
 );
 
@@ -408,9 +421,190 @@ app.post(
 );
 
 // ---------------------------------------------------------------------------
+// Admin dashboard (xlsx backend: upload sheet / manage voters / export)
+// ---------------------------------------------------------------------------
+function requireXlsx(res: Response): XlsxRepo | null {
+  if (!xlsxRepo) {
+    res.status(400).json({ error: 'admin_unavailable_for_backend' });
+    return null;
+  }
+  return xlsxRepo;
+}
+
+app.post(
+  '/api/admin/login',
+  loginLimiter,
+  asyncH(async (req, res) => {
+    if (!adminConfigured()) {
+      res.status(503).json({ error: 'admin_not_configured' });
+      return;
+    }
+    const password = String(req.body?.password ?? '');
+    if (!checkAdminPassword(password)) {
+      res.status(401).json({ error: 'invalid_credentials' });
+      return;
+    }
+    setAdminCookie(res, signAdmin());
+    res.json({ ok: true });
+  }),
+);
+
+app.post('/api/admin/logout', (_req, res) => {
+  clearAdminCookie(res);
+  res.json({ ok: true });
+});
+
+app.get('/api/admin/me', requireAdmin, (_req, res) => {
+  res.json({ admin: true, backend: config.dataBackend });
+});
+
+// Status: workbook meta, product count, and voter list (no pins exposed).
+app.get(
+  '/api/admin/status',
+  requireAdmin,
+  asyncH(async (_req, res) => {
+    const products = await repo.getProducts();
+    const voters = await repo.getVoters();
+    const meta = xlsxRepo?.getMeta() ?? null;
+    res.json({
+      backend: config.dataBackend,
+      hasWorkbook: products.length > 0,
+      meta,
+      productCount: products.length,
+      voters: voters.map((v) => ({ name: v.name, active: v.active })),
+    });
+  }),
+);
+
+// Upload a new .xlsx (multipart field "file").
+app.post(
+  '/api/admin/upload',
+  requireAdmin,
+  upload.single('file'),
+  asyncH(async (req, res) => {
+    const repoX = requireXlsx(res);
+    if (!repoX) return;
+    const file = (req as Request & { file?: { buffer: Buffer; originalname: string } }).file;
+    if (!file) {
+      res.status(400).json({ error: 'no_file' });
+      return;
+    }
+    try {
+      const summary = await repoX.ingest(file.buffer, file.originalname);
+      await refreshProducts(true);
+      res.json({ ok: true, ...summary });
+    } catch (err) {
+      console.error('[admin] upload parse failed:', err);
+      res.status(422).json({ error: 'parse_failed', detail: (err as Error)?.message });
+    }
+  }),
+);
+
+// Export the results-filled workbook.
+app.get(
+  '/api/admin/export',
+  requireAdmin,
+  asyncH(async (_req, res) => {
+    const repoX = requireXlsx(res);
+    if (!repoX) return;
+    if (!repoX.hasWorkbook()) {
+      res.status(400).json({ error: 'no_workbook' });
+      return;
+    }
+    const products = await repo.getProducts();
+    const votes = await aggregator.votesCached();
+    const results = computeAllResults(products, votes);
+    const buffer = await repoX.exportBuffer(results);
+
+    const base = (repoX.getMeta()?.originalName ?? 'mazyoud-vote').replace(/\.xlsx$/i, '');
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${base}-results-${stamp}.xlsx"`,
+    );
+    res.send(buffer);
+  }),
+);
+
+// Voter management.
+app.get(
+  '/api/admin/voters',
+  requireAdmin,
+  asyncH(async (_req, res) => {
+    const voters = await repo.getVoters();
+    res.json({ voters: voters.map((v) => ({ name: v.name, active: v.active })) });
+  }),
+);
+
+app.post(
+  '/api/admin/voters',
+  requireAdmin,
+  asyncH(async (req, res) => {
+    const repoX = requireXlsx(res);
+    if (!repoX) return;
+    const name = String(req.body?.name ?? '').trim();
+    const pinRaw = String(req.body?.pin ?? '').trim();
+    const active = req.body?.active !== false;
+    if (!name) {
+      res.status(400).json({ error: 'name_required' });
+      return;
+    }
+
+    // Allow toggling active / renaming without resupplying the PIN.
+    const existing = (await repo.getVoters()).find(
+      (v) => v.name.trim().toLowerCase() === name.toLowerCase(),
+    );
+    if (!pinRaw && !existing) {
+      res.status(400).json({ error: 'pin_required' });
+      return;
+    }
+    const pin = pinRaw ? preparePin(pinRaw) : (existing as Voter).pin;
+    repoX.upsertVoter({ name, pin, active });
+    res.json({ ok: true });
+  }),
+);
+
+app.delete(
+  '/api/admin/voters/:name',
+  requireAdmin,
+  asyncH(async (req, res) => {
+    const repoX = requireXlsx(res);
+    if (!repoX) return;
+    repoX.deleteVoter(String(req.params.name ?? ''));
+    res.json({ ok: true });
+  }),
+);
+
+// ---------------------------------------------------------------------------
 // Image proxy
 // ---------------------------------------------------------------------------
 app.get('/img', asyncH(imageProxyHandler));
+
+// Locally-generated placeholder images for DATA_BACKEND=demo (no network needed).
+app.get('/demo-img/:seed', (req, res) => {
+  const seed = String(req.params.seed || 'x');
+  let h = 0;
+  for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const hue = h % 360;
+  const hue2 = (hue + 40) % 360;
+  const num = seed.replace(/\D/g, '') || '';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 960">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="hsl(${hue},65%,55%)"/>
+    <stop offset="1" stop-color="hsl(${hue2},60%,38%)"/>
+  </linearGradient></defs>
+  <rect width="720" height="960" fill="url(#g)"/>
+  <text x="360" y="470" font-size="150" font-family="sans-serif" fill="rgba(255,255,255,0.92)" text-anchor="middle" font-weight="bold">#${num}</text>
+  <text x="360" y="560" font-size="46" font-family="sans-serif" fill="rgba(255,255,255,0.7)" text-anchor="middle" letter-spacing="8">DEMO</text>
+</svg>`;
+  res.setHeader('Content-Type', 'image/svg+xml');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.send(svg);
+});
 
 // ---------------------------------------------------------------------------
 // Static frontend + SPA fallback
@@ -425,6 +619,7 @@ if (fs.existsSync(path.join(webDist, 'index.html'))) {
     if (
       req.path.startsWith('/api') ||
       req.path === '/img' ||
+      req.path.startsWith('/demo-img') ||
       req.path === '/healthz'
     ) {
       return next();
@@ -438,9 +633,26 @@ if (fs.existsSync(path.join(webDist, 'index.html'))) {
 
 // Error handler.
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-  const message = (err as { message?: string })?.message ?? 'internal_error';
-  if (message === 'Not allowed by CORS') {
+  const e = (err ?? {}) as {
+    message?: string;
+    type?: string;
+    status?: number;
+    name?: string;
+    code?: string;
+  };
+  if (e.message === 'Not allowed by CORS') {
     res.status(403).json({ error: 'cors' });
+    return;
+  }
+  // Malformed JSON body (express.json) → client error, not a 500.
+  if (e.type === 'entity.parse.failed' || e.status === 400) {
+    res.status(400).json({ error: 'bad_json' });
+    return;
+  }
+  // Multer upload errors (e.g. file too large).
+  if (e.name === 'MulterError') {
+    const tooLarge = e.code === 'LIMIT_FILE_SIZE';
+    res.status(tooLarge ? 413 : 400).json({ error: tooLarge ? 'file_too_large' : 'upload_error' });
     return;
   }
   console.error('[error]', err);
@@ -482,9 +694,26 @@ void start();
 // ---------------------------------------------------------------------------
 // Local helpers (live aggregation for read endpoints)
 // ---------------------------------------------------------------------------
+/**
+ * Build the client image path: same-origin paths (e.g. demo SVGs) pass through
+ * directly; absolute http(s) URLs go through the allow-listed /img proxy.
+ */
+function imageSrc(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (url.startsWith('/')) return url;
+  return `/img?u=${encodeURIComponent(url)}`;
+}
+
 function buildLiveResult(p: Product, resolved: Map<string, VoteValue>): ResultRow {
   const t = tally(resolved);
   return buildResultRow(p, p.product_key, p.row_anchor, t, new Date().toISOString());
+}
+
+/** Live-compute every product's aggregate, ranked by net_score desc. */
+function computeAllResults(products: Product[], votes: VoteRow[]): ResultRow[] {
+  const rows = products.map((p) => buildLiveResult(p, resolveProductVotes(votes, p.product_key)));
+  rows.sort((a, b) => b.net_score - a.net_score);
+  return rows;
 }
 
 function countProductsWithAnyVote(votes: VoteRow[], productKeys: Set<string>): number {

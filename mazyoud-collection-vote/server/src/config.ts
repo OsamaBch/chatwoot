@@ -51,7 +51,19 @@ export const config = {
   googleApplicationCredentials: env('GOOGLE_APPLICATION_CREDENTIALS'),
 
   // --- Backend selection ---
-  dataBackend: env('DATA_BACKEND', 'google') as 'google' | 'n8n',
+  // xlsx  = upload a workbook, store votes locally (default)
+  // google = read/write the live Google Sheet
+  // n8n   = webhook drop-in    demo = in-memory preview
+  dataBackend: env('DATA_BACKEND', 'xlsx') as 'xlsx' | 'google' | 'n8n' | 'demo',
+
+  // --- Local store (xlsx backend) ---
+  // Directory for the append-only vote log, voters, meta, and the uploaded
+  // workbook. Mount this as a volume so data survives container restarts.
+  dataDir: env('DATA_DIR', 'data'),
+
+  // Admin dashboard password (upload sheet / manage voters / export results).
+  // Required to use the admin area; leave empty to disable it.
+  adminPassword: env('ADMIN_PASSWORD', ''),
 
   // --- Sessions / auth ---
   sessionSecret: env('SESSION_SECRET', 'change-me-in-production'),

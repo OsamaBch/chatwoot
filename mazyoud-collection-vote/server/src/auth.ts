@@ -5,6 +5,7 @@ import { config } from './config';
 import type { Voter } from './sheets/types';
 
 export const SESSION_COOKIE = 'mcv_session';
+export const ADMIN_COOKIE = 'mcv_admin';
 
 export interface SessionPayload {
   voter: string;
@@ -16,6 +17,7 @@ declare global {
   namespace Express {
     interface Request {
       session?: SessionPayload;
+      isAdmin?: boolean;
     }
   }
 }
@@ -101,7 +103,7 @@ export function authenticateVoter(
   return checkPin(pin, voter.pin) ? voter : null;
 }
 
-/** Express middleware: require a valid session cookie. */
+/** Express middleware: require a valid voter session cookie. */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   const token = req.cookies?.[SESSION_COOKIE];
   if (!token) {
@@ -115,4 +117,93 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   }
   req.session = session;
   next();
+}
+
+// ---------------------------------------------------------------------------
+// Admin auth (dashboard: upload sheet / manage voters / export results)
+// ---------------------------------------------------------------------------
+export function adminConfigured(): boolean {
+  return config.adminPassword.length > 0;
+}
+
+export function checkAdminPassword(input: string): boolean {
+  if (!adminConfigured()) return false;
+  return timingSafeEqual((input ?? '').trim(), config.adminPassword.trim());
+}
+
+export function signAdmin(): string {
+  return jwt.sign({ role: 'admin' }, config.sessionSecret, {
+    expiresIn: config.sessionTtlSeconds,
+  });
+}
+
+export function verifyAdmin(token: string): boolean {
+  try {
+    const decoded = jwt.verify(token, config.sessionSecret) as jwt.JwtPayload;
+    return decoded.role === 'admin';
+  } catch {
+    return false;
+  }
+}
+
+export function setAdminCookie(res: Response, token: string): void {
+  res.cookie(ADMIN_COOKIE, token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: config.appOrigin.startsWith('https://'),
+    maxAge: config.sessionTtlSeconds * 1000,
+    path: '/',
+  });
+}
+
+export function clearAdminCookie(res: Response): void {
+  res.clearCookie(ADMIN_COOKIE, { path: '/' });
+}
+
+export function isAdminRequest(req: Request): boolean {
+  const token = req.cookies?.[ADMIN_COOKIE];
+  return !!token && verifyAdmin(token);
+}
+
+/** Require a valid admin session. */
+export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  if (!adminConfigured()) {
+    res.status(503).json({ error: 'admin_not_configured' });
+    return;
+  }
+  if (!isAdminRequest(req)) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+  req.isAdmin = true;
+  next();
+}
+
+/** Allow either a voter session or an admin session (read-only shared views). */
+export function requireAnyAuth(req: Request, res: Response, next: NextFunction): void {
+  const token = req.cookies?.[SESSION_COOKIE];
+  const session = token ? verifySession(token) : null;
+  if (session) {
+    req.session = session;
+    next();
+    return;
+  }
+  if (isAdminRequest(req)) {
+    req.isAdmin = true;
+    next();
+    return;
+  }
+  res.status(401).json({ error: 'unauthorized' });
+}
+
+/**
+ * Produce the value to store in a voter's `pin` field. With HASH_PINS the PIN
+ * is salted-sha256'd ("salt$hash"); otherwise it is stored as-is.
+ */
+export function preparePin(pin: string): string {
+  const clean = (pin ?? '').trim();
+  if (!config.hashPins) return clean;
+  const salt = crypto.randomBytes(6).toString('hex');
+  const hash = crypto.createHash('sha256').update(salt + clean).digest('hex');
+  return `${salt}$${hash}`;
 }

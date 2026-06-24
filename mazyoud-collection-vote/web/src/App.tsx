@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from './api';
+import { AdminDashboard } from './screens/AdminDashboard';
+import { AdminLogin } from './screens/AdminLogin';
 import { CategoryPicker } from './screens/CategoryPicker';
 import { Deck, type VoteTally } from './screens/Deck';
 import { Done } from './screens/Done';
@@ -7,7 +9,7 @@ import { Login } from './screens/Login';
 import { Results } from './screens/Results';
 import type { AppConfig } from './types';
 
-type Screen = 'boot' | 'login' | 'category' | 'deck' | 'done' | 'results';
+type Screen = 'boot' | 'login' | 'category' | 'deck' | 'done' | 'results' | 'adminLogin' | 'admin';
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('boot');
@@ -36,6 +38,18 @@ export default function App() {
       } catch {
         /* keep defaults */
       }
+
+      // Deep-link to /admin → admin flow.
+      if (window.location.pathname.startsWith('/admin')) {
+        try {
+          await api.adminMe();
+          if (active) setScreen('admin');
+        } catch {
+          if (active) setScreen('adminLogin');
+        }
+        return;
+      }
+
       try {
         const me = await api.me();
         if (active && me.voter) {
@@ -76,6 +90,28 @@ export default function App() {
           onLoggedIn={(v) => {
             setVoter(v);
             setScreen('category');
+          }}
+          onAdmin={() => setScreen('adminLogin')}
+        />
+      );
+
+    case 'adminLogin':
+      return (
+        <AdminLogin
+          onLoggedIn={() => setScreen('admin')}
+          onBack={() => {
+            history.replaceState(null, '', '/');
+            setScreen('login');
+          }}
+        />
+      );
+
+    case 'admin':
+      return (
+        <AdminDashboard
+          onLogout={() => {
+            history.replaceState(null, '', '/');
+            setScreen('login');
           }}
         />
       );

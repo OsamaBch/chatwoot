@@ -17,10 +17,15 @@ services:
     environment:
       - PORT=8080
       - NODE_ENV=production
+      - DATA_DIR=/app/server/data
     expose:
       - "8080"
     # ports:
     #   - "8080:8080"   # uncomment for direct/local access without Caddy
+    volumes:
+      # Persists the uploaded workbook, votes (votes.jsonl) and voters across
+      # restarts/redeploys. Required for the default xlsx backend.
+      - mazyoud-data:/app/server/data
     networks:
       - caddy
     healthcheck:
@@ -33,3 +38,6 @@ services:
 networks:
   caddy:
     external: true
+
+volumes:
+  mazyoud-data:
