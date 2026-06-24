@@ -20,15 +20,25 @@ export function Card({
 }) {
   return (
     <div className="relative h-full w-full overflow-hidden rounded-3xl bg-neutral-900 shadow-card ring-1 ring-white/10">
-      {/* Image fills the card. `loadImage` gates the network request so big
+      {/* Image. `object-contain` shows the WHOLE product (square images aren't
+          cropped); a blurred, scaled copy fills the letterbox behind it so the
+          gaps aren't flat black. `loadImage` gates the network request so big
           decks only fetch the top + nearby cards. */}
       {product.image && loadImage !== false ? (
-        <img
-          src={product.image}
-          alt=""
-          draggable={false}
-          className="pointer-events-none h-full w-full select-none object-cover"
-        />
+        <>
+          <img
+            src={product.image}
+            aria-hidden="true"
+            draggable={false}
+            className="pointer-events-none absolute inset-0 h-full w-full scale-110 select-none object-cover opacity-40 blur-2xl"
+          />
+          <img
+            src={product.image}
+            alt=""
+            draggable={false}
+            className="pointer-events-none relative h-full w-full select-none object-contain"
+          />
+        </>
       ) : (
         <div className="flex h-full w-full items-center justify-center bg-neutral-800 text-neutral-600">
           {product.image ? '' : 'no image'}
