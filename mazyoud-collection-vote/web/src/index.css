@@ -33,6 +33,13 @@ body {
   position: absolute;
   inset: 0;
   will-change: transform;
+  /* Let the swipe library own the drag instead of the browser scrolling/panning
+     (critical for touch + Chrome device-emulation, where buttons would still
+     work but dragging wouldn't). */
+  touch-action: none;
+}
+.swipe-card * {
+  touch-action: none;
 }
 
 @keyframes pop {
