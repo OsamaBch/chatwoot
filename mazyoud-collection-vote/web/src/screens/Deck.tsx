@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import TinderCard from 'react-tinder-card';
 import { ApiError, api } from '../api';
 import { Card } from '../components/Card';
@@ -19,8 +19,6 @@ export interface VoteTally {
   total: number;
   category: string;
 }
-
-const WINDOW = 3; // number of stacked cards mounted at once (perf for 377+ sheets)
 
 function dirToVote(dir: Direction): Vote | null {
   if (dir === 'right') return 'keep';
@@ -46,7 +44,11 @@ export function Deck({
 }) {
   const [all, setAll] = useState<ProductCard[]>([]);
   const [deck, setDeck] = useState<ProductCard[]>([]);
-  const [pointer, setPointer] = useState(0);
+  // currentIndex points at the top card in `stack` (see below). It starts at
+  // the last index and counts DOWN to -1 (done) — the proven react-tinder-card
+  // pattern where the visually-top card is the last element rendered.
+  const [currentIndex, setCurrentIndex] = useState(-1);
+  const currentIndexRef = useRef(-1);
   const [myVotes, setMyVotes] = useState<Map<string, Vote>>(new Map());
   const [overlay, setOverlay] = useState<{ key: string; vote: Vote } | null>(null);
   const [fullyDecided, setFullyDecided] = useState(0);
@@ -54,14 +56,30 @@ export function Deck({
   const [error, setError] = useState('');
   const [undoBusy, setUndoBusy] = useState(false);
 
-  const cardRefs = useRef<Record<string, CardApi | null>>({});
-  // history of swipes for robust undo: where each card was the top card.
-  const history = useRef<{ product_key: string; vote: Vote; pointerAt: number }[]>([]);
+  // history of swipes for undo: which stack index each swipe was at.
+  const history = useRef<{ index: number; product_key: string }[]>([]);
+  const doneFired = useRef(false);
+
+  // `stack` = deck reversed so the FIRST product to vote is the last element
+  // (= painted on top). All cards stay mounted, which is what makes swipe
+  // advance + restoreCard (undo) reliable.
+  const stack = useMemo(() => [...deck].reverse(), [deck]);
+  const childRefs = useMemo(
+    () => Array.from({ length: stack.length }, () => createRef<CardApi>()),
+    [stack.length],
+  );
+
+  const setIndex = useCallback((v: number) => {
+    currentIndexRef.current = v;
+    setCurrentIndex(v);
+  }, []);
 
   // --- load products ------------------------------------------------------
   useEffect(() => {
     let active = true;
     setLoading(true);
+    doneFired.current = false;
+    history.current = [];
     api
       .products(category)
       .then((r) => {
@@ -72,14 +90,14 @@ export function Deck({
         setMyVotes(voted);
         const toSwipe = allowRevote ? r.products : r.products.filter((p) => !p.myVote);
         setDeck(toSwipe);
-        setPointer(0);
+        setIndex(toSwipe.length - 1); // top of the (reversed) stack
       })
       .catch(() => setError('Could not load products.'))
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
     };
-  }, [category, allowRevote]);
+  }, [category, allowRevote, setIndex]);
 
   // --- live "fully decided" overall counter ------------------------------
   useEffect(() => {
@@ -114,123 +132,99 @@ export function Deck({
 
   // --- done detection -----------------------------------------------------
   useEffect(() => {
-    if (!loading && deck.length > 0 && pointer >= deck.length) {
+    if (loading || doneFired.current) return;
+    if (deck.length === 0 || currentIndex < 0) {
+      doneFired.current = true;
       onDone(tally);
     }
-    if (!loading && deck.length === 0) {
-      onDone(tally);
-    }
-  }, [loading, deck.length, pointer, onDone, tally]);
+  }, [loading, currentIndex, deck.length, tally, onDone]);
 
   // --- vote / undo --------------------------------------------------------
-  const handleSwipe = useCallback(
-    (dir: Direction, product: ProductCard, atPointer: number) => {
+  const swiped = useCallback(
+    (dir: Direction, product: ProductCard, index: number) => {
       const vote = dirToVote(dir);
       if (!vote) return;
       setOverlay(null);
-      history.current.push({ product_key: product.product_key, vote, pointerAt: atPointer });
-      setMyVotes((m) => {
-        const next = new Map(m);
-        next.set(product.product_key, vote);
-        return next;
-      });
+      history.current.push({ index, product_key: product.product_key });
+      setMyVotes((m) => new Map(m).set(product.product_key, vote));
+      setIndex(index - 1);
       api.vote(product.product_key, product.row_anchor, vote).catch((e) => {
-        // already_voted (revote disabled) is benign — keep optimistic state.
         if (e instanceof ApiError && e.code === 'already_voted') return;
         setError('Vote failed to save — check connection.');
       });
     },
-    [],
+    [setIndex],
   );
 
-  const handleLeftScreen = useCallback((product_key: string) => {
-    setPointer((p) => p + 1);
-    setOverlay((o) => (o?.key === product_key ? null : o));
-    // free the ref for the card that's gone
-    delete cardRefs.current[product_key];
-  }, []);
-
-  const triggerSwipe = useCallback(
-    (dir: Direction) => {
-      const top = deck[pointer];
-      if (!top) return;
-      const ref = cardRefs.current[top.product_key];
-      if (ref?.swipe) {
-        void ref.swipe(dir);
-      } else {
-        // Fallback when the ref isn't ready: record + advance manually.
-        handleSwipe(dir, top, pointer);
-        handleLeftScreen(top.product_key);
+  const swipe = useCallback(
+    async (dir: Direction) => {
+      const i = currentIndexRef.current;
+      if (i < 0) return;
+      const ref = childRefs[i]?.current;
+      if (ref) {
+        try {
+          await ref.swipe(dir);
+        } catch {
+          /* ignore */
+        }
       }
     },
-    [deck, pointer, handleSwipe, handleLeftScreen],
+    [childRefs],
   );
 
-  const handleUndo = useCallback(async () => {
+  const goBack = useCallback(async () => {
     if (undoBusy) return;
-    const last = history.current[history.current.length - 1];
+    const last = history.current.pop();
     if (!last) return;
     setUndoBusy(true);
-    history.current.pop();
-
-    // Bring the card back: restoreCard if still mounted, else re-mount via pointer.
-    setPointer(last.pointerAt);
-    const ref = cardRefs.current[last.product_key];
-    if (ref?.restoreCard) {
+    setOverlay(null);
+    setMyVotes((m) => {
+      const next = new Map(m);
+      next.delete(last.product_key);
+      return next;
+    });
+    setIndex(last.index);
+    const ref = childRefs[last.index]?.current;
+    if (ref) {
       try {
         await ref.restoreCard();
       } catch {
         /* ignore */
       }
     }
-    setMyVotes((m) => {
-      const next = new Map(m);
-      next.delete(last.product_key);
-      return next;
-    });
     try {
       await api.undo({ product_key: last.product_key });
     } catch {
-      /* the local optimistic state already reflects the undo */
+      /* optimistic state already reflects the undo */
     } finally {
       setUndoBusy(false);
     }
-  }, [undoBusy]);
+  }, [undoBusy, childRefs, setIndex]);
 
   // --- keyboard shortcuts -------------------------------------------------
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        triggerSwipe('left');
+        void swipe('left');
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
-        triggerSwipe('right');
+        void swipe('right');
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        triggerSwipe('up');
+        void swipe('up');
       } else if (e.key === 'Backspace' || e.key.toLowerCase() === 'z') {
         e.preventDefault();
-        void handleUndo();
+        void goBack();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [triggerSwipe, handleUndo]);
+  }, [swipe, goBack]);
 
   // --- render -------------------------------------------------------------
-  if (loading) {
-    return <Centered>Loading products…</Centered>;
-  }
-  if (error && deck.length === 0) {
-    return <Centered>{error}</Centered>;
-  }
-
-  // Visible window: highest index first (bottom of stack), pointer last (top).
-  const visible: { product: ProductCard; idx: number }[] = [];
-  for (let i = Math.min(pointer + WINDOW - 1, deck.length - 1); i >= pointer; i--) {
-    if (deck[i]) visible.push({ product: deck[i], idx: i });
-  }
+  if (loading) return <Centered>Loading products…</Centered>;
+  if (error && deck.length === 0) return <Centered>{error}</Centered>;
 
   return (
     <div className="mx-auto flex h-full max-w-md flex-col gap-3 px-4 py-3">
@@ -248,42 +242,42 @@ export function Deck({
 
       {/* Deck area */}
       <div className="relative flex-1">
-        {visible.map(({ product, idx }) => {
-          const depth = idx - pointer; // 0 = top
+        {stack.map((product, index) => {
+          const depth = currentIndex - index; // 0 = top, 1/2 = beneath, <0 = swiped
           const isTop = depth === 0;
+          const hidden = depth > 2 || depth < 0; // keep mounted but out of the way
           return (
             <div
               key={product.product_key}
               className="swipe-card"
               style={{
-                transform: `translateY(${depth * 10}px) scale(${1 - depth * 0.04})`,
-                zIndex: WINDOW - depth,
+                transform:
+                  depth >= 0 ? `translateY(${depth * 7}px) scale(${1 - depth * 0.03})` : undefined,
+                opacity: hidden ? 0 : 1,
                 pointerEvents: isTop ? 'auto' : 'none',
-                opacity: depth > 1 ? 0.0 : 1,
+                zIndex: depth < 0 ? 100 : 50 - depth,
               }}
             >
               <TinderCard
-                ref={(el) => {
-                  cardRefs.current[product.product_key] = el as unknown as CardApi;
-                }}
+                ref={childRefs[index]}
                 className="h-full w-full"
                 preventSwipe={['down']}
                 swipeRequirementType="position"
-                swipeThreshold={100}
-                onSwipe={(dir) => handleSwipe(dir as Direction, product, idx)}
-                onCardLeftScreen={() => handleLeftScreen(product.product_key)}
+                swipeThreshold={90}
+                onSwipe={(dir) => swiped(dir as Direction, product, index)}
                 onSwipeRequirementFulfilled={(dir) => {
                   const v = dirToVote(dir as Direction);
                   if (v && isTop) setOverlay({ key: product.product_key, vote: v });
                 }}
                 onSwipeRequirementUnfulfilled={() => {
-                  if (isTop) setOverlay((o) => (o?.key === product.product_key ? null : o));
+                  setOverlay((o) => (o?.key === product.product_key ? null : o));
                 }}
               >
                 <Card
                   product={product}
                   overlay={overlay?.key === product.product_key ? overlay.vote : null}
                   showDetails={showDetails}
+                  loadImage={depth >= -1 && depth <= 4}
                 />
               </TinderCard>
             </div>
@@ -293,16 +287,16 @@ export function Deck({
 
       {/* Controls */}
       <div className="flex items-center justify-center gap-4 pb-2">
-        <CtrlButton label="Skip" color="skip" onClick={() => triggerSwipe('left')}>
+        <CtrlButton label="Skip" color="skip" onClick={() => void swipe('left')}>
           ✕
         </CtrlButton>
-        <CtrlButton label="Undo" color="neutral" small disabled={undoBusy} onClick={() => void handleUndo()}>
+        <CtrlButton label="Undo" color="neutral" small disabled={undoBusy} onClick={() => void goBack()}>
           ↺
         </CtrlButton>
-        <CtrlButton label="Super" color="super" small onClick={() => triggerSwipe('up')}>
+        <CtrlButton label="Super" color="super" small onClick={() => void swipe('up')}>
           ★
         </CtrlButton>
-        <CtrlButton label="Keep" color="keep" onClick={() => triggerSwipe('right')}>
+        <CtrlButton label="Keep" color="keep" onClick={() => void swipe('right')}>
           ♥
         </CtrlButton>
       </div>

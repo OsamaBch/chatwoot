@@ -11,15 +11,18 @@ export function Card({
   product,
   overlay,
   showDetails,
+  loadImage = true,
 }: {
   product: ProductCard;
   overlay: Vote | null;
   showDetails: boolean;
+  loadImage?: boolean;
 }) {
   return (
     <div className="relative h-full w-full overflow-hidden rounded-3xl bg-neutral-900 shadow-card ring-1 ring-white/10">
-      {/* Image fills the card */}
-      {product.image ? (
+      {/* Image fills the card. `loadImage` gates the network request so big
+          decks only fetch the top + nearby cards. */}
+      {product.image && loadImage !== false ? (
         <img
           src={product.image}
           alt=""
@@ -27,8 +30,8 @@ export function Card({
           className="pointer-events-none h-full w-full select-none object-cover"
         />
       ) : (
-        <div className="flex h-full w-full items-center justify-center bg-neutral-800 text-neutral-500">
-          no image
+        <div className="flex h-full w-full items-center justify-center bg-neutral-800 text-neutral-600">
+          {product.image ? '' : 'no image'}
         </div>
       )}
 
