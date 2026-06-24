@@ -28,10 +28,14 @@ export function extractImageUrl(cell: unknown): string | null {
   return null;
 }
 
-/** True when a row is a product anchor (column B / image cell is non-empty). */
+/**
+ * True when a row is a product anchor: column B actually holds an IMAGE — an
+ * =IMAGE("…") formula or a bare URL. Requiring a real image (rather than just
+ * "B is non-empty") prevents the 9 per-size data rows of each block from being
+ * mistaken for products when they carry numbers/text in that column.
+ */
 export function isAnchorRow(row: unknown[]): boolean {
-  const b = row[COL.IMAGE];
-  return b != null && String(b).trim() !== '';
+  return extractImageUrl(row[COL.IMAGE]) !== null;
 }
 
 /**
@@ -134,5 +138,13 @@ export function parseProducts(
     });
   }
 
-  return products;
+  // Defensive: collapse any rows that resolved to the same product_key. An
+  // unexpected layout can otherwise yield duplicate cards (same key), which
+  // breaks the swipe deck. Keep the first (anchor) occurrence.
+  const seen = new Set<string>();
+  return products.filter((p) => {
+    if (seen.has(p.product_key)) return false;
+    seen.add(p.product_key);
+    return true;
+  });
 }
