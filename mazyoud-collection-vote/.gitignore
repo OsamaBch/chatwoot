@@ -1,0 +1,19 @@
+# dependencies
+node_modules/
+**/node_modules/
+
+# build output
+server/dist/
+server/public/
+web/dist/
+*.tsbuildinfo
+
+# env & secrets
+.env
+*.local
+service-account*.json
+*.key.json
+
+# logs / os
+*.log
+.DS_Store

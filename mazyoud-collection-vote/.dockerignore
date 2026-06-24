@@ -1,0 +1,10 @@
+**/node_modules
+server/dist
+server/public
+web/dist
+.env
+*.local
+.git
+**/*.log
+service-account*.json
+*.key.json

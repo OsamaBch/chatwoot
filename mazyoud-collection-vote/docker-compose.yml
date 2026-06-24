@@ -1,0 +1,35 @@
+# Mazyoud Collection Vote — single container (API + built frontend).
+#
+# This service joins the external "caddy" network so the Caddy reverse proxy can
+# reach it by name (see Caddyfile.snippet: `reverse_proxy mazyoud-vote:8080`).
+# For standalone testing without Caddy, uncomment the `ports` block below.
+name: mazyoud-vote
+
+services:
+  mazyoud-vote:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mazyoud-vote:latest
+    container_name: mazyoud-vote
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - PORT=8080
+      - NODE_ENV=production
+    expose:
+      - "8080"
+    # ports:
+    #   - "8080:8080"   # uncomment for direct/local access without Caddy
+    networks:
+      - caddy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+networks:
+  caddy:
+    external: true

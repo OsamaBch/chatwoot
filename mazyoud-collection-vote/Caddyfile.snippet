@@ -1,0 +1,22 @@
+# Add this block to your existing Caddyfile on the Hetzner box.
+# Caddy must share a docker network named "caddy" with the container so it can
+# resolve `mazyoud-vote` by name (the docker-compose service joins that network).
+#
+# Caddy handles TLS automatically for vote.mazyoud.com (point the DNS A/AAAA
+# record at the box first).
+
+vote.mazyoud.com {
+	encode zstd gzip
+
+	# Long cache for hashed Vite assets; the proxied images set their own.
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	reverse_proxy mazyoud-vote:8080
+}
