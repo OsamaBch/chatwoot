@@ -52,7 +52,17 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       await load();
     } catch (err) {
       const code = err instanceof ApiError ? err.code : 'upload_failed';
-      setError(code === 'parse_failed' ? 'Could not parse that .xlsx.' : 'Upload failed.');
+      if (code === 'admin_unavailable_for_backend') {
+        setError(
+          'Upload needs xlsx mode. Restart the server without DATA_BACKEND=demo (xlsx is the default).',
+        );
+      } else if (code === 'parse_failed') {
+        setError('Could not parse that .xlsx — check the product layout is on the configured sheet.');
+      } else if (code === 'file_too_large') {
+        setError('That file is too large (max 40 MB).');
+      } else {
+        setError('Upload failed.');
+      }
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -119,6 +129,13 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
 
       {error && <p className="rounded-xl bg-skip/15 px-3 py-2 text-sm text-skip">{error}</p>}
       {note && <p className="rounded-xl bg-keep/15 px-3 py-2 text-sm text-keep">{note}</p>}
+
+      {status && status.backend !== 'xlsx' && (
+        <p className="rounded-xl bg-super/15 px-3 py-2 text-sm text-super">
+          You're in <b>{status.backend}</b> mode (preview data). Uploading a sheet and exporting
+          results need <b>xlsx</b> mode — restart the server without <code>DATA_BACKEND=demo</code>.
+        </p>
+      )}
 
       {/* Workbook */}
       <Section title="Source sheet">
