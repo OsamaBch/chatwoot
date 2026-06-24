@@ -74,16 +74,26 @@ app.use(express.json({ limit: '256kb' }));
 app.use(cookieParser());
 
 const corsOrigins = new Set<string>([config.appOrigin]);
-if (config.nodeEnv !== 'production') {
-  corsOrigins.add('http://localhost:5173');
-  corsOrigins.add('http://localhost:8080');
-  corsOrigins.add('http://127.0.0.1:5173');
+
+// Allow the configured app origin, plus any loopback origin (localhost /
+// 127.0.0.1 / ::1 on any port) so local dev works regardless of NODE_ENV.
+// Browsers send `Origin` on POSTs even same-origin, so this must not reject
+// localhost. Real cross-site origins (e.g. evil.com) are still blocked.
+function isAllowedOrigin(origin: string): boolean {
+  if (corsOrigins.has(origin)) return true;
+  try {
+    const host = new URL(origin).hostname;
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  } catch {
+    return false;
+  }
 }
+
 app.use(
   cors({
     origin: (origin, cb) => {
-      // Same-origin / curl (no Origin header) is always fine.
-      if (!origin || corsOrigins.has(origin)) return cb(null, true);
+      // No Origin header (same-origin GET / curl) is always fine.
+      if (!origin || isAllowedOrigin(origin)) return cb(null, true);
       return cb(new Error('Not allowed by CORS'));
     },
     credentials: true,
