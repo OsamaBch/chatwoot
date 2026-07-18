@@ -3,7 +3,7 @@
  * Plugin Name: Maz Allowlist
  * Plugin URI:  https://www.mazyoud.com
  * Description: Controls which WooCommerce orders are visible in wp-admin and WooCommerce Analytics, based on configurable visibility rules. Strictly read-path: never modifies order data.
- * Version:     1.0.0
+ * Version:     1.1.0
  * Author:      Mazyoud
  * Requires at least: 6.4
  * Requires PHP: 7.4
@@ -14,7 +14,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'MAZ_ALLOWLIST_VERSION', '1.0.0' );
+define( 'MAZ_ALLOWLIST_VERSION', '1.1.0' );
 define( 'MAZ_ALLOWLIST_FILE', __FILE__ );
 define( 'MAZ_ALLOWLIST_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MAZ_ALLOWLIST_URL', plugin_dir_url( __FILE__ ) );

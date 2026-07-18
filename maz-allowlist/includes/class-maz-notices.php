@@ -106,7 +106,7 @@ class Maz_Allowlist_Notices {
 			'maz_dismiss_notice'
 		);
 
-		$bypassing = maz_allowlist_user_can_bypass();
+		$bypassing = maz_allowlist_user_can_bypass() && ! Maz_Allowlist_Config::apply_to_bypass();
 		?>
 		<div class="notice notice-warning">
 			<p>

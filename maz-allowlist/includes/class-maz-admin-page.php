@@ -27,11 +27,10 @@ class Maz_Allowlist_Admin_Page {
 	}
 
 	/**
-	 * Add the submenu under WooCommerce.
+	 * Add the page under Tools.
 	 */
 	public static function register_menu() {
-		add_submenu_page(
-			'woocommerce',
+		add_management_page(
 			__( 'Maz Allowlist', 'maz-allowlist' ),
 			__( 'Maz Allowlist', 'maz-allowlist' ),
 			self::CAPABILITY,
@@ -46,7 +45,7 @@ class Maz_Allowlist_Admin_Page {
 	 * @return string
 	 */
 	public static function url() {
-		return admin_url( 'admin.php?page=' . self::SLUG );
+		return admin_url( 'tools.php?page=' . self::SLUG );
 	}
 
 	/* ---------------------------------------------------------------------
@@ -289,6 +288,8 @@ class Maz_Allowlist_Admin_Page {
 				<?php esc_html_e( 'Filters which WooCommerce orders are visible in the wp-admin orders list and in WooCommerce Analytics. Read-path only: order data is never modified. Users with the "maz_view_all_orders" capability (administrators by default) always see everything.', 'maz-allowlist' ); ?>
 			</p>
 
+			<?php self::render_diagnostics(); ?>
+
 			<?php if ( $multi_cur ) : ?>
 				<div class="notice notice-error">
 					<p><strong><?php esc_html_e( 'Multiple currencies detected in orders:', 'maz-allowlist' ); ?></strong>
@@ -381,6 +382,16 @@ class Maz_Allowlist_Admin_Page {
 							<p class="description"><?php esc_html_e( 'Example with allowlist + 10% sample enabled: AND shows only allowlisted orders that also fall in the 10% sample; OR shows all allowlisted orders plus the 10% sample of everything else.', 'maz-allowlist' ); ?></p>
 						</td>
 					</tr>
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Scope / testing', 'maz-allowlist' ); ?></th>
+						<td>
+							<label>
+								<input type="checkbox" name="apply_to_bypass" value="1" <?php checked( ! empty( $config['apply_to_bypass'] ) ); ?> />
+								<?php esc_html_e( 'ALSO apply the rules to users holding the "maz_view_all_orders" bypass capability (administrators included — that means YOU).', 'maz-allowlist' ); ?>
+							</label>
+							<p class="description"><?php esc_html_e( 'Normally administrators bypass every rule and always see the full data — that is why the list can look unfiltered while you test as an admin. Turn this on to verify filtering with your own account; turn it back off for normal operation. If a configuration ever hides too much, use the MAZ_ALLOWLIST_DISABLE kill switch in wp-config.php.', 'maz-allowlist' ); ?></p>
+						</td>
+					</tr>
 				</table>
 
 				<p class="description">
@@ -448,6 +459,125 @@ class Maz_Allowlist_Admin_Page {
 			?>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Status & diagnostics: why you may (not) be seeing filtering, and whether
+	 * the WooCommerce hooks this plugin relies on exist in the installed WC.
+	 */
+	private static function render_diagnostics() {
+		$bypass  = maz_allowlist_user_can_bypass();
+		$applies = maz_allowlist_filtering_active();
+		$rules   = Maz_Allowlist_Config::any_rule_active();
+		$checks  = self::hook_diagnostics();
+		?>
+		<div class="card" style="max-width:1100px;padding:0 16px 8px">
+			<h2><?php esc_html_e( 'Status & diagnostics', 'maz-allowlist' ); ?></h2>
+			<ul style="list-style:disc;margin-left:1.5em">
+				<li>
+					<?php
+					printf(
+						/* translators: 1: WooCommerce version 2: HPOS state */
+						esc_html__( 'WooCommerce %1$s — order storage: %2$s.', 'maz-allowlist' ),
+						esc_html( defined( 'WC_VERSION' ) ? WC_VERSION : '?' ),
+						esc_html( maz_allowlist_hpos_enabled() ? __( 'HPOS (custom order tables)', 'maz-allowlist' ) : __( 'legacy (posts)', 'maz-allowlist' ) )
+					);
+					?>
+				</li>
+				<li>
+					<?php if ( $bypass ) : ?>
+						<strong><?php esc_html_e( 'Your account holds the "maz_view_all_orders" bypass capability.', 'maz-allowlist' ); ?></strong>
+						<?php
+						if ( $rules && ! $applies ) {
+							esc_html_e( 'Rules are enabled but do NOT apply to you — your orders list and Analytics show the FULL data. Use the "Scope / testing" checkbox below to test with your own account, or check with a user that lacks the capability (e.g. a shop manager).', 'maz-allowlist' );
+						} elseif ( $applies ) {
+							esc_html_e( 'Testing mode is ON: the rules currently apply to you as well.', 'maz-allowlist' );
+						} else {
+							esc_html_e( 'No rule is enabled — nothing is filtered for anyone.', 'maz-allowlist' );
+						}
+						?>
+					<?php else : ?>
+						<?php echo esc_html( $applies ? __( 'The enabled rules apply to your account.', 'maz-allowlist' ) : __( 'No rule is enabled — nothing is filtered.', 'maz-allowlist' ) ); ?>
+					<?php endif; ?>
+				</li>
+				<?php foreach ( $checks as $check ) : ?>
+					<li>
+						<?php echo esc_html( $check['label'] ); ?>:
+						<?php if ( 'yes' === $check['status'] ) : ?>
+							<span style="color:#008a20">✔ <?php esc_html_e( 'present in installed WooCommerce', 'maz-allowlist' ); ?></span>
+						<?php elseif ( 'no' === $check['status'] ) : ?>
+							<span style="color:#d63638">✘ <?php esc_html_e( 'NOT FOUND in installed WooCommerce — this integration point will not filter!', 'maz-allowlist' ); ?></span>
+						<?php else : ?>
+							<span style="color:#996800">? <?php esc_html_e( 'could not check (source file not found — may be fine)', 'maz-allowlist' ); ?></span>
+						<?php endif; ?>
+					</li>
+				<?php endforeach; ?>
+			</ul>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Check whether the WC hooks this plugin attaches to actually exist in the
+	 * installed WooCommerce source (cached per WC version for a day).
+	 *
+	 * @return array<int,array{label:string,status:string}>
+	 */
+	private static function hook_diagnostics() {
+		$wc_version = defined( 'WC_VERSION' ) ? WC_VERSION : 'unknown';
+		$cache_key  = 'maz_allowlist_diag_' . md5( $wc_version . '|' . MAZ_ALLOWLIST_VERSION );
+		$cached     = get_transient( $cache_key );
+		if ( is_array( $cached ) ) {
+			return $cached;
+		}
+
+		$targets = array(
+			array(
+				'label'  => __( 'Orders list hook (woocommerce_orders_table_query_clauses)', 'maz-allowlist' ),
+				'files'  => array( 'src/Internal/DataStores/Orders/OrdersTableQuery.php' ),
+				'needle' => 'woocommerce_orders_table_query_clauses',
+			),
+			array(
+				'label'  => __( 'Analytics clause filters (woocommerce_analytics_clauses_*)', 'maz-allowlist' ),
+				'files'  => array( 'src/Admin/API/Reports/SqlQuery.php' ),
+				'needle' => 'woocommerce_analytics_clauses',
+			),
+			array(
+				'label'  => __( 'Analytics cache-disable filter (…analytics_report_should_use_cache)', 'maz-allowlist' ),
+				'files'  => array( 'src/Admin/API/Reports/DataStore.php', 'src/Admin/API/Reports/Cache.php' ),
+				'needle' => 'analytics_report_should_use_cache',
+			),
+			array(
+				'label'  => __( 'Legacy reports hook (woocommerce_reports_get_order_report_query)', 'maz-allowlist' ),
+				'files'  => array( 'includes/admin/reports/class-wc-admin-report.php' ),
+				'needle' => 'woocommerce_reports_get_order_report_query',
+			),
+		);
+
+		$checks = array();
+		foreach ( $targets as $target ) {
+			$status = 'unknown';
+			if ( defined( 'WC_ABSPATH' ) ) {
+				foreach ( $target['files'] as $file ) {
+					$path = WC_ABSPATH . $file;
+					if ( ! file_exists( $path ) ) {
+						continue;
+					}
+					$source = (string) file_get_contents( $path );
+					$status = ( false !== strpos( $source, $target['needle'] ) ) ? 'yes' : 'no';
+					if ( 'yes' === $status ) {
+						break;
+					}
+				}
+			}
+			$checks[] = array(
+				'label'  => $target['label'],
+				'status' => $status,
+			);
+		}
+
+		set_transient( $cache_key, $checks, DAY_IN_SECONDS );
+		return $checks;
 	}
 
 	/**

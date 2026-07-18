@@ -20,7 +20,7 @@ Built for HPOS-first stores (tested target: WP 7.0 / WC 10.8, HPOS enabled,
    - creates the table `{prefix}maz_order_allowlist` (`order_id BIGINT UNSIGNED PRIMARY KEY`),
    - grants the `maz_view_all_orders` capability to the **administrator** role,
    - seeds the configuration option.
-3. Configure under **WooCommerce → Maz Allowlist**.
+3. Configure under **Tools → Maz Allowlist**.
 
 Uninstalling (deleting) the plugin drops the table and removes all of its options,
 transients, user meta, and the capability. Order data is never touched.
@@ -100,6 +100,14 @@ by searching.
   see everything. Administrators receive it on activation. Grant it to additional
   roles (e.g. with a role editor) to scope who sees the full dataset — this is the
   primary intended mechanism; prefer scoping by role over globally hiding data.
+- **Testing as an admin:** because administrators bypass everything, the orders
+  list looks unfiltered when you test with your own account. Either check with a
+  user that lacks the capability, or enable **Scope / testing → “ALSO apply the
+  rules to users holding the bypass capability”** on the settings page to make the
+  rules apply to yourself, and turn it off when done. The **Status & diagnostics**
+  panel at the top of the settings page tells you whether the rules currently
+  apply to *you*, and verifies that the WooCommerce hooks this plugin attaches to
+  exist in your installed WooCommerce version.
 - Managing the plugin's settings requires `manage_options`.
 - All state-changing actions are nonce-protected and capability-checked.
 

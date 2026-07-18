@@ -35,6 +35,9 @@ class Maz_Allowlist_Config {
 			// 'and': an order must pass EVERY enabled rule to be visible (any rule can hide it).
 			// 'or' : an order is visible if it passes AT LEAST ONE enabled rule (hidden only when every enabled rule hides it).
 			'precedence'     => 'and',
+			// Testing mode: when true, rules ALSO apply to users holding the
+			// maz_view_all_orders bypass capability (i.e. administrators).
+			'apply_to_bypass' => false,
 			'rules'          => array(
 				'allowlist' => array(
 					'enabled' => false,
@@ -85,7 +88,7 @@ class Maz_Allowlist_Config {
 	private static function merge_defaults( array $stored ) {
 		$defaults = self::defaults();
 		$config   = $defaults;
-		foreach ( array( 'schema_version', 'precedence' ) as $key ) {
+		foreach ( array( 'schema_version', 'precedence', 'apply_to_bypass' ) as $key ) {
 			if ( isset( $stored[ $key ] ) ) {
 				$config[ $key ] = $stored[ $key ];
 			}
@@ -146,7 +149,8 @@ class Maz_Allowlist_Config {
 		$current = self::get();
 		$config  = self::defaults();
 
-		$config['precedence'] = ( isset( $raw['precedence'] ) && 'or' === $raw['precedence'] ) ? 'or' : 'and';
+		$config['precedence']      = ( isset( $raw['precedence'] ) && 'or' === $raw['precedence'] ) ? 'or' : 'and';
+		$config['apply_to_bypass'] = ! empty( $raw['apply_to_bypass'] );
 
 		$config['rules']['allowlist']['enabled'] = ! empty( $raw['allowlist_enabled'] );
 
@@ -233,6 +237,16 @@ class Maz_Allowlist_Config {
 	}
 
 	/**
+	 * Testing mode: do rules also apply to bypass-capability holders?
+	 *
+	 * @return bool
+	 */
+	public static function apply_to_bypass() {
+		$config = self::get();
+		return ! empty( $config['apply_to_bypass'] );
+	}
+
+	/**
 	 * Is at least one rule enabled?
 	 *
 	 * @return bool
@@ -259,9 +273,10 @@ class Maz_Allowlist_Config {
 		return md5(
 			wp_json_encode(
 				array(
-					'rules'      => $config['rules'],
-					'precedence' => $config['precedence'],
-					'list_rev'   => (int) get_option( self::REV_OPTION, 1 ),
+					'rules'           => $config['rules'],
+					'precedence'      => $config['precedence'],
+					'apply_to_bypass' => ! empty( $config['apply_to_bypass'] ),
+					'list_rev'        => (int) get_option( self::REV_OPTION, 1 ),
 				)
 			)
 		);
@@ -304,6 +319,11 @@ class Maz_Allowlist_Config {
 		$changes = array();
 		if ( $old['precedence'] !== $new['precedence'] ) {
 			$changes[] = sprintf( 'precedence: %s → %s', $old['precedence'], $new['precedence'] );
+		}
+		$old_bypass = ! empty( $old['apply_to_bypass'] );
+		$new_bypass = ! empty( $new['apply_to_bypass'] );
+		if ( $old_bypass !== $new_bypass ) {
+			$changes[] = sprintf( 'apply_to_bypass: %s → %s', $old_bypass ? 'on' : 'off', $new_bypass ? 'on' : 'off' );
 		}
 		foreach ( $new['rules'] as $rule => $fields ) {
 			foreach ( $fields as $field => $value ) {

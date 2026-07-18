@@ -29,7 +29,11 @@ class Maz_Allowlist_Preview {
 	 * @param string $hook_suffix Current admin page hook.
 	 */
 	public static function enqueue( $hook_suffix ) {
-		if ( 'woocommerce_page_' . Maz_Allowlist_Admin_Page::SLUG !== $hook_suffix ) {
+		$page_hooks = array(
+			'tools_page_' . Maz_Allowlist_Admin_Page::SLUG,
+			'woocommerce_page_' . Maz_Allowlist_Admin_Page::SLUG,
+		);
+		if ( ! in_array( $hook_suffix, $page_hooks, true ) ) {
 			return;
 		}
 		wp_enqueue_script(

@@ -300,10 +300,17 @@ function maz_allowlist_user_can_bypass() {
 
 /**
  * Should filtering apply to the current user right now?
- * (At least one rule enabled, and the user does not hold the bypass capability.)
+ * True when at least one rule is enabled AND the user either lacks the bypass
+ * capability or the "apply to bypass users too" testing mode is on.
  *
  * @return bool
  */
 function maz_allowlist_filtering_active() {
-	return Maz_Allowlist_Config::any_rule_active() && ! maz_allowlist_user_can_bypass();
+	if ( ! Maz_Allowlist_Config::any_rule_active() ) {
+		return false;
+	}
+	if ( Maz_Allowlist_Config::apply_to_bypass() ) {
+		return true;
+	}
+	return ! maz_allowlist_user_can_bypass();
 }
