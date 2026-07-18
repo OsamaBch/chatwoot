@@ -297,7 +297,7 @@ class Maz_Allowlist_Admin_Page {
 				</div>
 			<?php endif; ?>
 
-			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<form method="post" id="maz-config-form" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 				<?php wp_nonce_field( 'maz_save_config' ); ?>
 				<input type="hidden" name="action" value="maz_save_config" />
 
@@ -440,11 +440,61 @@ class Maz_Allowlist_Admin_Page {
 
 			<?php
 			/**
-			 * Extension point for later sections (dry-run preview, audit log).
+			 * Extension point (the dry-run preview section hooks in here).
 			 */
 			do_action( 'maz_allowlist_settings_sections', $config );
+
+			self::render_audit_log();
 			?>
 		</div>
+		<?php
+	}
+
+	/**
+	 * Render the audit-log section (who changed what, when, with which seed).
+	 */
+	private static function render_audit_log() {
+		$entries = Maz_Allowlist_Audit_Log::get_entries( 50 );
+		?>
+		<hr />
+		<h2><?php esc_html_e( 'Audit log', 'maz-allowlist' ); ?></h2>
+		<?php if ( ! $entries ) : ?>
+			<p class="description"><?php esc_html_e( 'No configuration changes recorded yet.', 'maz-allowlist' ); ?></p>
+			<?php
+			return;
+		endif;
+		?>
+		<table class="widefat striped" style="max-width:1100px">
+			<thead>
+				<tr>
+					<th><?php esc_html_e( 'When', 'maz-allowlist' ); ?></th>
+					<th><?php esc_html_e( 'Who', 'maz-allowlist' ); ?></th>
+					<th><?php esc_html_e( 'Action', 'maz-allowlist' ); ?></th>
+					<th><?php esc_html_e( 'What changed', 'maz-allowlist' ); ?></th>
+					<th><?php esc_html_e( 'Seed', 'maz-allowlist' ); ?></th>
+				</tr>
+			</thead>
+			<tbody>
+				<?php foreach ( $entries as $entry ) : ?>
+					<tr>
+						<td><?php echo esc_html( wp_date( 'Y-m-d H:i:s', (int) $entry['time'] ) ); ?></td>
+						<td><?php echo esc_html( $entry['user_login'] ); ?></td>
+						<td><code><?php echo esc_html( $entry['action'] ); ?></code></td>
+						<td><?php echo esc_html( $entry['detail'] ); ?></td>
+						<td><code><?php echo esc_html( $entry['seed'] ); ?></code></td>
+					</tr>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
+		<p class="description">
+			<?php
+			printf(
+				/* translators: %d: max entries kept */
+				esc_html__( 'The most recent %d events are kept.', 'maz-allowlist' ),
+				(int) Maz_Allowlist_Audit_Log::MAX_ENTRIES
+			);
+			?>
+		</p>
 		<?php
 	}
 }
