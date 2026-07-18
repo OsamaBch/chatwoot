@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name: Maz Allowlist
+ * Plugin Name: Order Access Control
  * Plugin URI:  https://www.mazyoud.com
- * Description: Controls which WooCommerce orders are visible in wp-admin and WooCommerce Analytics, based on configurable visibility rules. Strictly read-path: never modifies order data.
- * Version:     1.1.0
+ * Description: Role-based access control for WooCommerce orders: limits which orders restricted staff roles can see in the wp-admin orders list and Analytics. Read-path only; never modifies order data. Full-access administrators always see everything.
+ * Version:     1.2.0
  * Author:      Mazyoud
  * Requires at least: 6.4
  * Requires PHP: 7.4
@@ -14,7 +14,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'MAZ_ALLOWLIST_VERSION', '1.1.0' );
+define( 'MAZ_ALLOWLIST_VERSION', '1.2.0' );
 define( 'MAZ_ALLOWLIST_FILE', __FILE__ );
 define( 'MAZ_ALLOWLIST_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MAZ_ALLOWLIST_URL', plugin_dir_url( __FILE__ ) );

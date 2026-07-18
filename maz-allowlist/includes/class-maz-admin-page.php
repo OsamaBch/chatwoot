@@ -24,6 +24,87 @@ class Maz_Allowlist_Admin_Page {
 		add_action( 'admin_post_maz_import_allowlist', array( __CLASS__, 'handle_import_allowlist' ) );
 		add_action( 'admin_post_maz_clear_allowlist', array( __CLASS__, 'handle_clear_allowlist' ) );
 		add_action( 'admin_post_maz_reroll_seed', array( __CLASS__, 'handle_reroll_seed' ) );
+		add_action( 'admin_post_maz_unlock', array( __CLASS__, 'handle_unlock' ) );
+		add_action( 'admin_post_maz_set_passcode', array( __CLASS__, 'handle_set_passcode' ) );
+	}
+
+	/**
+	 * Transient key holding the "unlocked this session" flag for a user.
+	 *
+	 * @return string
+	 */
+	private static function unlock_key() {
+		return 'maz_allowlist_unlocked_' . get_current_user_id();
+	}
+
+	/**
+	 * Is the settings page currently unlocked for this user (or no passcode)?
+	 *
+	 * @return bool
+	 */
+	private static function is_unlocked() {
+		if ( ! Maz_Allowlist_Config::has_passcode() ) {
+			return true;
+		}
+		return (bool) get_transient( self::unlock_key() );
+	}
+
+	/**
+	 * Verify the entered passcode and unlock for 30 minutes.
+	 */
+	public static function handle_unlock() {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to access this page.', 'maz-allowlist' ) );
+		}
+		check_admin_referer( 'maz_unlock' );
+
+		$entered = isset( $_POST['maz_passcode'] ) ? (string) wp_unslash( $_POST['maz_passcode'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+		if ( Maz_Allowlist_Config::check_passcode( $entered ) ) {
+			set_transient( self::unlock_key(), 1, 30 * MINUTE_IN_SECONDS );
+		} else {
+			self::add_message( __( 'Incorrect code.', 'maz-allowlist' ), 'error' );
+		}
+		self::redirect_back();
+	}
+
+	/**
+	 * Set, change, or clear the settings-page passcode.
+	 */
+	public static function handle_set_passcode() {
+		self::guard( 'maz_set_passcode' );
+
+		$new = isset( $_POST['maz_new_passcode'] ) ? (string) wp_unslash( $_POST['maz_new_passcode'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+		Maz_Allowlist_Config::set_passcode( $new );
+		delete_transient( self::unlock_key() ); // Force re-entry with the new code.
+		self::add_message(
+			'' === trim( $new ) ? __( 'Settings passcode removed.', 'maz-allowlist' ) : __( 'Settings passcode saved.', 'maz-allowlist' ),
+			'success'
+		);
+		self::redirect_back();
+	}
+
+	/**
+	 * Render the passcode challenge screen.
+	 */
+	private static function render_lock_screen() {
+		self::render_messages();
+		?>
+		<div class="wrap">
+			<h1><?php esc_html_e( 'Order Access Control', 'maz-allowlist' ); ?></h1>
+			<div class="card" style="max-width:420px;padding:8px 20px 20px">
+				<h2><?php esc_html_e( 'Enter access code', 'maz-allowlist' ); ?></h2>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+					<?php wp_nonce_field( 'maz_unlock' ); ?>
+					<input type="hidden" name="action" value="maz_unlock" />
+					<p>
+						<input type="password" name="maz_passcode" autocomplete="off" autofocus
+							inputmode="numeric" style="font-size:1.4em;letter-spacing:.3em;width:100%" />
+					</p>
+					<?php submit_button( __( 'Unlock', 'maz-allowlist' ) ); ?>
+				</form>
+			</div>
+		</div>
+		<?php
 	}
 
 	/**
@@ -31,8 +112,8 @@ class Maz_Allowlist_Admin_Page {
 	 */
 	public static function register_menu() {
 		add_management_page(
-			__( 'Maz Allowlist', 'maz-allowlist' ),
-			__( 'Maz Allowlist', 'maz-allowlist' ),
+			__( 'Order Access Control', 'maz-allowlist' ),
+			__( 'Order Access', 'maz-allowlist' ),
 			self::CAPABILITY,
 			self::SLUG,
 			array( __CLASS__, 'render' )
@@ -59,7 +140,7 @@ class Maz_Allowlist_Admin_Page {
 	 */
 	private static function guard( $nonce_action ) {
 		if ( ! current_user_can( self::CAPABILITY ) ) {
-			wp_die( esc_html__( 'You are not allowed to manage Maz Allowlist settings.', 'maz-allowlist' ) );
+			wp_die( esc_html__( 'You are not allowed to manage Order Access Control settings.', 'maz-allowlist' ) );
 		}
 		check_admin_referer( $nonce_action );
 	}
@@ -269,6 +350,12 @@ class Maz_Allowlist_Admin_Page {
 			return;
 		}
 
+		// Optional passcode gate over the (already capability-protected) page.
+		if ( ! self::is_unlocked() ) {
+			self::render_lock_screen();
+			return;
+		}
+
 		$config     = Maz_Allowlist_Config::get();
 		$rules      = $config['rules'];
 		$count      = Maz_Allowlist_Table::count();
@@ -276,7 +363,7 @@ class Maz_Allowlist_Admin_Page {
 		$multi_cur  = count( $currencies ) > 1;
 		?>
 		<div class="wrap">
-			<h1><?php esc_html_e( 'Maz Allowlist — Order Visibility', 'maz-allowlist' ); ?></h1>
+			<h1><?php esc_html_e( 'Order Access Control', 'maz-allowlist' ); ?></h1>
 
 			<?php self::render_messages(); ?>
 
@@ -285,7 +372,7 @@ class Maz_Allowlist_Admin_Page {
 			<?php endif; ?>
 
 			<p>
-				<?php esc_html_e( 'Filters which WooCommerce orders are visible in the wp-admin orders list and in WooCommerce Analytics. Read-path only: order data is never modified. Users with the "maz_view_all_orders" capability (administrators by default) always see everything.', 'maz-allowlist' ); ?>
+				<?php esc_html_e( 'Controls which orders restricted staff roles can access in the wp-admin orders list and in Analytics, so sensitive orders are not exposed to limited accounts. Read-path only: order data is never modified. Users with full access (the "maz_view_all_orders" capability, administrators by default) always see everything.', 'maz-allowlist' ); ?>
 			</p>
 
 			<?php self::render_diagnostics(); ?>
@@ -302,17 +389,17 @@ class Maz_Allowlist_Admin_Page {
 				<?php wp_nonce_field( 'maz_save_config' ); ?>
 				<input type="hidden" name="action" value="maz_save_config" />
 
-				<h2><?php esc_html_e( 'Rules', 'maz-allowlist' ); ?></h2>
+				<h2><?php esc_html_e( 'Access rules', 'maz-allowlist' ); ?></h2>
 				<table class="form-table" role="presentation">
 					<tr>
-						<th scope="row"><?php esc_html_e( '(a) Allowlist', 'maz-allowlist' ); ?></th>
+						<th scope="row"><?php esc_html_e( '(a) Approved list', 'maz-allowlist' ); ?></th>
 						<td>
 							<label>
 								<input type="checkbox" name="allowlist_enabled" value="1" <?php checked( ! empty( $rules['allowlist']['enabled'] ) ); ?> />
 								<?php
 								printf(
-									/* translators: %d: number of IDs currently in the allowlist */
-									esc_html__( 'Only orders whose ID is in the allowlist are visible. The list currently contains %d IDs (managed below).', 'maz-allowlist' ),
+									/* translators: %d: number of IDs currently in the list */
+									esc_html__( 'Restricted roles may only access orders whose ID is on the approved list. The list currently contains %d IDs (managed below).', 'maz-allowlist' ),
 									(int) $count
 								);
 								?>
@@ -320,37 +407,37 @@ class Maz_Allowlist_Admin_Page {
 						</td>
 					</tr>
 					<tr>
-						<th scope="row"><?php esc_html_e( '(b) Random sample', 'maz-allowlist' ); ?></th>
+						<th scope="row"><?php esc_html_e( '(b) Sampling', 'maz-allowlist' ); ?></th>
 						<td>
 							<label>
 								<input type="checkbox" name="sample_enabled" value="1" <?php checked( ! empty( $rules['sample']['enabled'] ) ); ?> />
-								<?php esc_html_e( 'Show a deterministic random sample of orders.', 'maz-allowlist' ); ?>
+								<?php esc_html_e( 'Restricted roles access a deterministic subset of orders.', 'maz-allowlist' ); ?>
 							</label>
 							<p>
 								<label>
-									<?php esc_html_e( 'Visible percentage:', 'maz-allowlist' ); ?>
+									<?php esc_html_e( 'Accessible percentage:', 'maz-allowlist' ); ?>
 									<input type="number" name="sample_visible_pct" min="0" max="100" step="1" value="<?php echo esc_attr( (int) $rules['sample']['visible_pct'] ); ?>" style="width:5em" /> %
 								</label>
-								<span class="description"><?php esc_html_e( '(default 10% visible / 90% hidden)', 'maz-allowlist' ); ?></span>
+								<span class="description"><?php esc_html_e( '(default 10% accessible)', 'maz-allowlist' ); ?></span>
 							</p>
 							<p class="description">
-								<?php esc_html_e( 'The sample is seeded, never re-randomized at query time, so pagination and report totals are stable. Current seed:', 'maz-allowlist' ); ?>
+								<?php esc_html_e( 'The subset is seeded, never re-randomized at query time, so pagination and report totals are stable. Current seed:', 'maz-allowlist' ); ?>
 								<code><?php echo esc_html( $rules['sample']['seed'] ); ?></code>
 							</p>
 						</td>
 					</tr>
 					<tr>
-						<th scope="row"><?php esc_html_e( '(c) Amount threshold', 'maz-allowlist' ); ?></th>
+						<th scope="row"><?php esc_html_e( '(c) Amount rule', 'maz-allowlist' ); ?></th>
 						<td>
 							<label>
 								<input type="checkbox" name="amount_enabled" value="1" <?php checked( ! empty( $rules['amount']['enabled'] ) ); ?> <?php disabled( $multi_cur ); ?> />
-								<?php esc_html_e( 'Hide orders by total amount.', 'maz-allowlist' ); ?>
+								<?php esc_html_e( 'Restrict access by order total.', 'maz-allowlist' ); ?>
 							</label>
 							<p>
 								<select name="amount_mode">
-									<option value="above" <?php selected( 'above', $rules['amount']['mode'] ); ?>><?php esc_html_e( 'Hide orders ABOVE X', 'maz-allowlist' ); ?></option>
-									<option value="below" <?php selected( 'below', $rules['amount']['mode'] ); ?>><?php esc_html_e( 'Hide orders BELOW X', 'maz-allowlist' ); ?></option>
-									<option value="band" <?php selected( 'band', $rules['amount']['mode'] ); ?>><?php esc_html_e( 'Hide orders WITHIN band X–Y', 'maz-allowlist' ); ?></option>
+									<option value="above" <?php selected( 'above', $rules['amount']['mode'] ); ?>><?php esc_html_e( 'Restrict orders ABOVE X', 'maz-allowlist' ); ?></option>
+									<option value="below" <?php selected( 'below', $rules['amount']['mode'] ); ?>><?php esc_html_e( 'Restrict orders BELOW X', 'maz-allowlist' ); ?></option>
+									<option value="band" <?php selected( 'band', $rules['amount']['mode'] ); ?>><?php esc_html_e( 'Restrict orders WITHIN band X–Y', 'maz-allowlist' ); ?></option>
 								</select>
 								<label> X: <input type="text" name="amount_x" value="<?php echo esc_attr( $rules['amount']['x'] ); ?>" style="width:8em" inputmode="decimal" /></label>
 								<label> Y: <input type="text" name="amount_y" value="<?php echo esc_attr( $rules['amount']['y'] ); ?>" style="width:8em" inputmode="decimal" /> <span class="description"><?php esc_html_e( '(band mode only)', 'maz-allowlist' ); ?></span></label>
@@ -369,17 +456,17 @@ class Maz_Allowlist_Admin_Page {
 						</td>
 					</tr>
 					<tr>
-						<th scope="row"><?php esc_html_e( 'Rule precedence', 'maz-allowlist' ); ?></th>
+						<th scope="row"><?php esc_html_e( 'Rule combination', 'maz-allowlist' ); ?></th>
 						<td>
 							<label>
 								<input type="radio" name="precedence" value="and" <?php checked( 'and', $config['precedence'] ); ?> />
-								<strong>AND</strong> — <?php esc_html_e( 'strict: an order must satisfy EVERY enabled rule to be shown. Any single enabled rule can hide an order.', 'maz-allowlist' ); ?>
+								<strong>AND</strong> — <?php esc_html_e( 'strict: restricted roles can access an order only if it satisfies EVERY enabled rule.', 'maz-allowlist' ); ?>
 							</label><br />
 							<label>
 								<input type="radio" name="precedence" value="or" <?php checked( 'or', $config['precedence'] ); ?> />
-								<strong>OR</strong> — <?php esc_html_e( 'lenient: an order is shown if it satisfies AT LEAST ONE enabled rule. It is hidden only when every enabled rule would hide it.', 'maz-allowlist' ); ?>
+								<strong>OR</strong> — <?php esc_html_e( 'lenient: restricted roles can access an order if it satisfies AT LEAST ONE enabled rule.', 'maz-allowlist' ); ?>
 							</label>
-							<p class="description"><?php esc_html_e( 'Example with allowlist + 10% sample enabled: AND shows only allowlisted orders that also fall in the 10% sample; OR shows all allowlisted orders plus the 10% sample of everything else.', 'maz-allowlist' ); ?></p>
+							<p class="description"><?php esc_html_e( 'Example with approved list + 10% sampling enabled: AND grants access only to approved orders that also fall in the 10% subset; OR grants access to all approved orders plus the 10% subset of everything else.', 'maz-allowlist' ); ?></p>
 						</td>
 					</tr>
 					<tr>
@@ -455,9 +542,38 @@ class Maz_Allowlist_Admin_Page {
 			 */
 			do_action( 'maz_allowlist_settings_sections', $config );
 
+			self::render_passcode_section();
 			self::render_audit_log();
 			?>
 		</div>
+		<?php
+	}
+
+	/**
+	 * Render the settings-page passcode management section.
+	 */
+	private static function render_passcode_section() {
+		$has = Maz_Allowlist_Config::has_passcode();
+		?>
+		<hr />
+		<h2><?php esc_html_e( 'Settings page access code', 'maz-allowlist' ); ?></h2>
+		<p class="description">
+			<?php esc_html_e( 'Optional code required to open this settings page. Leave blank and save to remove it. This is a light convenience lock on top of the WordPress permission that already restricts this page — it is not strong security. The real protection is not giving staff the "manage options" permission; staff without it never reach this page at all.', 'maz-allowlist' ); ?>
+		</p>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<?php wp_nonce_field( 'maz_set_passcode' ); ?>
+			<input type="hidden" name="action" value="maz_set_passcode" />
+			<p>
+				<label>
+					<?php echo esc_html( $has ? __( 'New code (blank = remove):', 'maz-allowlist' ) : __( 'Set a code:', 'maz-allowlist' ) ); ?>
+					<input type="password" name="maz_new_passcode" autocomplete="new-password" inputmode="numeric" style="width:12em" />
+				</label>
+				<?php submit_button( $has ? __( 'Change code', 'maz-allowlist' ) : __( 'Set code', 'maz-allowlist' ), 'secondary', 'submit', false ); ?>
+			</p>
+			<?php if ( $has ) : ?>
+				<p class="description"><?php esc_html_e( 'A code is currently set.', 'maz-allowlist' ); ?></p>
+			<?php endif; ?>
+		</form>
 		<?php
 	}
 

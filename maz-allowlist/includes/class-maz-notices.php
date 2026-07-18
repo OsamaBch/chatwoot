@@ -65,7 +65,13 @@ class Maz_Allowlist_Notices {
 		if ( ! Maz_Allowlist_Config::any_rule_active() || ! self::is_relevant_screen() ) {
 			return;
 		}
-		if ( ! current_user_can( 'edit_shop_orders' ) && ! current_user_can( 'manage_woocommerce' ) ) {
+		// The notice is shown ONLY to full-access users (holders of the
+		// bypass capability — administrators / the store operator). This keeps
+		// an honest signal that access rules are in effect for whoever
+		// legitimately oversees the store, while restricted staff simply see
+		// their permitted subset without a banner. It is deliberately NOT a
+		// way to conceal the filtering from anyone who has real admin access.
+		if ( ! maz_allowlist_user_can_bypass() ) {
 			return;
 		}
 
@@ -92,7 +98,7 @@ class Maz_Allowlist_Notices {
 		if ( ! empty( $config['rules']['amount']['enabled'] ) ) {
 			$amount = $config['rules']['amount'];
 			$bounds = ( 'band' === $amount['mode'] ) ? $amount['x'] . '–' . $amount['y'] : $amount['x'];
-			$active[] = sprintf( 'amount threshold (hide %s %s, %s basis)', $amount['mode'], $bounds, $amount['basis'] );
+			$active[] = sprintf( 'amount rule (%s %s, %s basis)', $amount['mode'], $bounds, $amount['basis'] );
 		}
 
 		$dismiss_url = wp_nonce_url(
@@ -106,19 +112,18 @@ class Maz_Allowlist_Notices {
 			'maz_dismiss_notice'
 		);
 
-		$bypassing = maz_allowlist_user_can_bypass() && ! Maz_Allowlist_Config::apply_to_bypass();
+		$applies_to_me = Maz_Allowlist_Config::apply_to_bypass();
 		?>
 		<div class="notice notice-warning">
 			<p>
-				<strong><?php esc_html_e( 'Maz Allowlist:', 'maz-allowlist' ); ?></strong>
-				<?php if ( $bypassing ) : ?>
-					<?php esc_html_e( 'order visibility rules are ACTIVE for users without the bypass capability — you hold "maz_view_all_orders", so YOU are seeing the complete, unfiltered data.', 'maz-allowlist' ); ?>
+				<strong><?php esc_html_e( 'Order Access Control:', 'maz-allowlist' ); ?></strong>
+				<?php if ( $applies_to_me ) : ?>
+					<?php esc_html_e( 'access rules are active AND currently apply to your own account (testing mode) — this view is a restricted subset, not the full data.', 'maz-allowlist' ); ?>
 				<?php else : ?>
-					<?php esc_html_e( 'this view is FILTERED — it does not show all orders, and totals reflect only the visible subset.', 'maz-allowlist' ); ?>
+					<?php esc_html_e( 'access rules are active for restricted roles. You have full access, so YOU are seeing the complete data — but staff without full access see only the permitted subset here and in Analytics.', 'maz-allowlist' ); ?>
 				<?php endif; ?>
 				<?php esc_html_e( 'Active rules:', 'maz-allowlist' ); ?>
-				<?php echo esc_html( implode( ' · ', $active ) ); ?>
-				(<?php echo esc_html( 'or' === $config['precedence'] ? __( 'OR precedence: hidden only if every rule hides it', 'maz-allowlist' ) : __( 'AND precedence: any rule can hide an order', 'maz-allowlist' ) ); ?>).
+				<?php echo esc_html( implode( ' · ', $active ) ); ?>.
 				<a href="<?php echo esc_url( $dismiss_url ); ?>"><?php esc_html_e( 'Dismiss for this session', 'maz-allowlist' ); ?></a>
 			</p>
 		</div>

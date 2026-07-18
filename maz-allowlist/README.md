@@ -1,7 +1,12 @@
-# Maz Allowlist — WooCommerce order visibility
+# Order Access Control — WooCommerce order access for staff roles
 
-Controls which WooCommerce orders are visible in **wp-admin** (orders list) and in
-**WooCommerce Analytics**, based on configurable visibility rules.
+Controls which WooCommerce orders **restricted staff roles** can access in
+**wp-admin** (orders list) and in **WooCommerce Analytics**, so sensitive orders
+are not exposed to limited accounts. Full-access administrators always see
+everything.
+
+> Internal package/text-domain slug remains `maz-allowlist` for continuity; the
+> user-facing name is **Order Access Control**.
 
 Strictly **read-path**: the plugin filters presentation only. It never modifies,
 deletes, or alters any order data. Customers always see their own orders normally —
@@ -122,12 +127,25 @@ define( 'MAZ_ALLOWLIST_DISABLE', true );
 The plugin then no-ops entirely (no hooks, no filtering, no admin page). Use this
 to recover if a bad configuration makes admin data unusable.
 
-## Filtered-view notice
+## In-view notice (full-access users only)
 
 Whenever any rule is active, the Orders, Analytics, and legacy Reports screens show
-a warning notice stating that the view is filtered and which rules are on (bypass
-users get a variant saying the rules apply to others but not to them). It is
+a notice **only to full-access users** (holders of `maz_view_all_orders` — the
+store operator and any administrator/auditor with admin access), stating that
+access rules are in effect. Restricted staff do **not** see this notice; they
+simply see their permitted subset. This keeps an honest signal for whoever
+legitimately oversees the store while not surfacing it to limited accounts. It is
 dismissible per session (12 h) and reappears whenever the configuration changes.
+
+## Settings-page access code
+
+The settings page can optionally require a numeric/text code before it opens
+(**Tools → Order Access → Settings page access code**). This is a light
+convenience lock layered on top of the WordPress `manage_options` permission that
+already restricts the page — it is **not** strong security. The code is stored
+hashed, never in clear, and unlocks for 30 minutes per session. Real protection is
+not granting staff the `manage_options` capability: staff without it never reach
+this page regardless of the code.
 
 ## Dry-run preview
 

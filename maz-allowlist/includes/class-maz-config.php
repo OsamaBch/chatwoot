@@ -32,6 +32,10 @@ class Maz_Allowlist_Config {
 	public static function defaults() {
 		return array(
 			'schema_version' => self::SCHEMA_VERSION,
+			// Optional passcode gate for the settings page (hashed, never
+			// stored in clear). '' = no passcode. This is a light convenience
+			// lock, NOT a security boundary — see set_passcode().
+			'passcode_hash'  => '',
 			// 'and': an order must pass EVERY enabled rule to be visible (any rule can hide it).
 			// 'or' : an order is visible if it passes AT LEAST ONE enabled rule (hidden only when every enabled rule hides it).
 			'precedence'     => 'and',
@@ -88,7 +92,7 @@ class Maz_Allowlist_Config {
 	private static function merge_defaults( array $stored ) {
 		$defaults = self::defaults();
 		$config   = $defaults;
-		foreach ( array( 'schema_version', 'precedence', 'apply_to_bypass' ) as $key ) {
+		foreach ( array( 'schema_version', 'precedence', 'apply_to_bypass', 'passcode_hash' ) as $key ) {
 			if ( isset( $stored[ $key ] ) ) {
 				$config[ $key ] = $stored[ $key ];
 			}
@@ -151,6 +155,8 @@ class Maz_Allowlist_Config {
 
 		$config['precedence']      = ( isset( $raw['precedence'] ) && 'or' === $raw['precedence'] ) ? 'or' : 'and';
 		$config['apply_to_bypass'] = ! empty( $raw['apply_to_bypass'] );
+		// Passcode is managed by its own action, never the main form; preserve.
+		$config['passcode_hash']   = isset( $current['passcode_hash'] ) ? $current['passcode_hash'] : '';
 
 		$config['rules']['allowlist']['enabled'] = ! empty( $raw['allowlist_enabled'] );
 
@@ -234,6 +240,49 @@ class Maz_Allowlist_Config {
 	 */
 	public static function bump_list_rev() {
 		update_option( self::REV_OPTION, (int) get_option( self::REV_OPTION, 1 ) + 1, false );
+	}
+
+	/**
+	 * Is a settings-page passcode set?
+	 *
+	 * @return bool
+	 */
+	public static function has_passcode() {
+		$config = self::get();
+		return ! empty( $config['passcode_hash'] );
+	}
+
+	/**
+	 * Set or clear the settings-page passcode.
+	 *
+	 * NOTE: this is a light convenience lock over a page that already requires
+	 * the manage_options capability — it is NOT a security boundary. Anyone
+	 * with database, WP-CLI, or admin-code access can bypass it. Real
+	 * protection comes from not granting staff the manage_options capability.
+	 *
+	 * @param string $passcode New passcode; '' clears it.
+	 */
+	public static function set_passcode( $passcode ) {
+		$config                  = self::get();
+		$passcode                = trim( (string) $passcode );
+		$config['passcode_hash'] = ( '' === $passcode ) ? '' : wp_hash_password( $passcode );
+		update_option( self::OPTION, $config, false );
+		self::$cache = null;
+		Maz_Allowlist_Audit_Log::record( 'passcode', '' === $passcode ? 'settings passcode removed' : 'settings passcode set/changed' );
+	}
+
+	/**
+	 * Verify a passcode against the stored hash.
+	 *
+	 * @param string $passcode Candidate.
+	 * @return bool
+	 */
+	public static function check_passcode( $passcode ) {
+		$config = self::get();
+		if ( empty( $config['passcode_hash'] ) ) {
+			return true;
+		}
+		return wp_check_password( (string) $passcode, $config['passcode_hash'] );
 	}
 
 	/**
