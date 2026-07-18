@@ -54,6 +54,12 @@ class Maz_Allowlist_Plugin {
 
 		Maz_Allowlist_Config::maybe_upgrade();
 
+		// Analytics filtering must be active for admin pages, /wc-analytics/*
+		// REST requests AND Action Scheduler (CSV export) runs — see the
+		// class doc-block for why this is not gated on is_admin().
+		require_once $includes . 'class-maz-analytics.php';
+		Maz_Allowlist_Analytics::init();
+
 		if ( is_admin() ) {
 			require_once $includes . 'class-maz-admin-page.php';
 			require_once $includes . 'class-maz-notices.php';
