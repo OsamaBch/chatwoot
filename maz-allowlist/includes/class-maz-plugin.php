@@ -64,9 +64,11 @@ class Maz_Allowlist_Plugin {
 			require_once $includes . 'class-maz-admin-page.php';
 			require_once $includes . 'class-maz-notices.php';
 			require_once $includes . 'class-maz-orders-list.php';
+			require_once $includes . 'class-maz-exports.php';
 			Maz_Allowlist_Admin_Page::init();
 			Maz_Allowlist_Notices::init();
 			Maz_Allowlist_Orders_List::init();
+			Maz_Allowlist_Exports::init();
 		}
 	}
 
