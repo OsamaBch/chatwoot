@@ -57,8 +57,10 @@ class Maz_Allowlist_Plugin {
 		if ( is_admin() ) {
 			require_once $includes . 'class-maz-admin-page.php';
 			require_once $includes . 'class-maz-notices.php';
+			require_once $includes . 'class-maz-orders-list.php';
 			Maz_Allowlist_Admin_Page::init();
 			Maz_Allowlist_Notices::init();
+			Maz_Allowlist_Orders_List::init();
 		}
 	}
 
