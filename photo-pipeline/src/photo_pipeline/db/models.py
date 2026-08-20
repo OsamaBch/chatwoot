@@ -54,6 +54,17 @@ class ExecutionMode(enum.StrEnum):
     BATCH = "batch"
 
 
+class SourceType(enum.StrEnum):
+    """Ingest format, decided by magic bytes. Shown in the run report and
+    approval queue so a non-RAW image is visibly non-RAW when reviewing
+    colour."""
+
+    RAW = "raw"
+    JPEG = "jpeg"
+    PNG = "png"
+    TIFF = "tiff"
+
+
 class BarcodeSource(enum.StrEnum):
     """Which resolution step produced the barcode (first hit wins)."""
 
@@ -155,6 +166,17 @@ class Item(Base):
     view: Mapped[str] = mapped_column(String(16), nullable=False, default="front")
     source_path: Mapped[str] = mapped_column(Text, nullable=False)
     source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Ingest format from magic bytes (never extension); surfaced in the run
+    # report and approval queue.
+    source_type: Mapped[SourceType] = mapped_column(
+        Enum(SourceType, name="source_type", values_callable=lambda e: [m.value for m in e]),
+        nullable=False,
+        default=SourceType.RAW,
+        server_default=SourceType.RAW.value,
+    )
+    # Full source resolution, upright (drives the no-upscale rule).
+    source_px_width: Mapped[int | None] = mapped_column(Integer)
+    source_px_height: Mapped[int | None] = mapped_column(Integer)
     # sha256(source_sha256 + core_sha + mode_version + reference_sha +
     # model_snapshot) — same inputs never billed twice, across restarts.
     idempotency_key: Mapped[str] = mapped_column(

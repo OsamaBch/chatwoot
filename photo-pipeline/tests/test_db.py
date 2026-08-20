@@ -57,6 +57,11 @@ def test_tables_and_indexes(migrated: None) -> None:
     assert {"modes", "jobs", "items", "barcodes"} <= tables
     item_indexes = {ix["name"]: ix for ix in inspector.get_indexes("items")}
     assert item_indexes["ix_items_idempotency_key"]["unique"]
+    item_columns = {c["name"]: c for c in inspector.get_columns("items")}
+    assert not item_columns["source_type"]["nullable"]
+    assert item_columns["source_type"]["default"] == "'raw'::source_type"
+    assert "source_px_width" in item_columns
+    assert "source_px_height" in item_columns
     barcode_uniques = inspector.get_unique_constraints("barcodes") + [
         {"column_names": ix["column_names"]}
         for ix in inspector.get_indexes("barcodes")

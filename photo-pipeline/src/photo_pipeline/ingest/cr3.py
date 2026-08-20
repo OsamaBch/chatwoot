@@ -26,6 +26,15 @@ _CR3_BRAND = b"crx "
 _MIN_HEADER = 16
 
 
+def is_cr3_header(header: bytes) -> bool:
+    """True when the leading bytes are a CR3 ISO-BMFF header:
+    [size:4]['ftyp'][major_brand:'crx '] with a plausible box size."""
+    if len(header) < _MIN_HEADER or header[4:8] != _FTYP:
+        return False
+    (box_size,) = struct.unpack(">I", header[0:4])
+    return box_size >= _MIN_HEADER and header[8:12] == _CR3_BRAND
+
+
 def validate_cr3_magic(path: Path) -> None:
     """Validate ISO-BMFF layout with major brand 'crx '.
 
