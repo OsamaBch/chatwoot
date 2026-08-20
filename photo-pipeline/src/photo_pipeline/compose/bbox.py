@@ -58,7 +58,12 @@ class GarmentBbox:
 
 
 def _label_components(mask: npt.NDArray[np.bool_]) -> list[ComponentBox]:
-    """Connected components of a boolean mask via pyvips labelregions."""
+    """Connected components of a boolean mask via pyvips labelregions.
+
+    Per-label areas and bounding boxes are reduced in C with
+    ``hist_find_indexed`` (sum/min/max over coordinate images) — no
+    per-label numpy scans, so full-resolution masks stay cheap.
+    """
     height, width = mask.shape
     mask_vips = pyvips.Image.new_from_memory(
         np.ascontiguousarray(mask.astype(np.uint8) * 255).tobytes(),
@@ -68,22 +73,42 @@ def _label_components(mask: npt.NDArray[np.bool_]) -> list[ComponentBox]:
         "uchar",
     )
     labels_vips = mask_vips.labelregions()
-    labels: npt.NDArray[np.uint32] = np.ndarray(
-        buffer=labels_vips.write_to_memory(),
-        dtype=np.uint32,
-        shape=(height, width),
-    )
-    foreground_labels = np.unique(labels[mask])
+
+    coords = pyvips.Image.xyz(width, height)
+    xcoord, ycoord = coords[0], coords[1]
+    ones = (mask_vips > 0).cast("uchar") / 255
+
+    def _indexed(image: pyvips.Image, combine: str) -> npt.NDArray[np.float64]:
+        hist = image.hist_find_indexed(labels_vips, combine=combine)
+        values: npt.NDArray[np.float64] = np.ndarray(
+            buffer=hist.cast("double").write_to_memory(),
+            dtype=np.float64,
+            shape=(hist.width,),
+        )
+        return values
+
+    areas = _indexed(ones, "sum")
+    # Coordinate extrema over garment pixels only: push background pixels to
+    # +inf/-inf equivalents so they never win the min/max.
+    big = float(width + height)
+    garment = ones
+    min_x = _indexed(xcoord * garment + (1 - garment) * big, "min")
+    min_y = _indexed(ycoord * garment + (1 - garment) * big, "min")
+    max_x = _indexed(xcoord * garment - (1 - garment), "max")
+    max_y = _indexed(ycoord * garment - (1 - garment), "max")
+
     boxes: list[ComponentBox] = []
-    for label in foreground_labels:
-        ys, xs = np.nonzero(labels == label)
+    for label in range(len(areas)):
+        if areas[label] <= 0:  # label 0 is background; empty labels skipped
+            continue
+        left, top = int(min_x[label]), int(min_y[label])
         boxes.append(
             ComponentBox(
-                left=int(xs.min()),
-                top=int(ys.min()),
-                width=int(xs.max() - xs.min() + 1),
-                height=int(ys.max() - ys.min() + 1),
-                area_px=int(ys.size),
+                left=left,
+                top=top,
+                width=int(max_x[label]) - left + 1,
+                height=int(max_y[label]) - top + 1,
+                area_px=round(float(areas[label])),
             )
         )
     return boxes

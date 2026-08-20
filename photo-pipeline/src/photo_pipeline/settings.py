@@ -188,6 +188,42 @@ class BarcodeSettings(_Frozen):
     prefix_whitelist: tuple[str, ...] = ("613",)
 
 
+class MaterialFamily(StrEnum):
+    KNIT = "knit"
+    WOVEN = "woven"
+    DENIM = "denim"
+    LEATHER = "leather"
+    FAUX_LEATHER = "faux leather"
+    COATED = "coated"
+    JERSEY = "jersey"
+    FLEECE = "fleece"
+    TULLE = "tulle"
+    LACE = "lace"
+    MESH = "mesh"
+
+
+class SegmentationSettings(_Frozen):
+    """BiRefNet ONNX segmentation (full precision, warmed once, batched)."""
+
+    model_path: str = "models/birefnet-general-fp32.onnx"
+    # ImageNet normalisation used by BiRefNet.
+    normalize_mean: tuple[float, float, float] = (0.485, 0.456, 0.406)
+    normalize_std: tuple[float, float, float] = (0.229, 0.224, 0.225)
+    # 0 lets onnxruntime pick (one session per process; threads within it).
+    intra_op_threads: int = 0
+    # Trimap matting path selected by material_family.
+    matting_materials: tuple[MaterialFamily, ...] = (
+        MaterialFamily.TULLE,
+        MaterialFamily.LACE,
+        MaterialFamily.MESH,
+    )
+    trimap_erode_px: int = 10
+    trimap_dilate_px: int = 10
+    # Coarse alpha above this is trimap foreground, below (255 - it) is
+    # background; the band between is the unknown region matting resolves.
+    trimap_confident_alpha: int = 240
+
+
 class PromptSettings(_Frozen):
     """Prompt-layer invariants (enforced server-side, case-insensitive)."""
 
@@ -213,6 +249,7 @@ class Settings(BaseSettings):
     export: ExportSettings = ExportSettings()
     raw_develop: RawDevelopSettings = RawDevelopSettings()
     qa: QaSettings = QaSettings()
+    segmentation: SegmentationSettings = SegmentationSettings()
     routing: RoutingSettings = RoutingSettings()
     concurrency: ConcurrencySettings = ConcurrencySettings()
     barcode: BarcodeSettings = BarcodeSettings()

@@ -147,3 +147,61 @@ def ingest_for_segmentation(path: Path, settings: Settings) -> IngestResult:
         source_px=source_px,
         alpha_was_present=alpha_was_present,
     )
+
+
+_SWAPPED_ORIENTATIONS = frozenset({5, 6, 7, 8})
+
+
+def ingest_thumbnail(path: Path, thumb_px: int, settings: Settings) -> IngestResult:
+    """Decode once at the right size: segmentation-input variant that never
+    materialises the full frame for non-CR3 sources.
+
+    ``pyvips.Image.thumbnail`` uses JPEG shrink-on-load, applies the EXIF
+    orientation, and converts any embedded ICC to sRGB during the downscale.
+    Same normalisation semantics as :func:`ingest_for_segmentation`
+    (alpha flattened onto the background + logged); ``source_px`` still
+    reports the full upright source resolution.
+    """
+    source_type = detect_source_type(path)
+    if source_type is SourceType.RAW:
+        full = ingest_for_segmentation(path, settings)
+        image = full.image
+        kernel = settings.export.downscale_kernel
+        small = image.resize(
+            thumb_px / image.width, vscale=thumb_px / image.height, kernel=kernel
+        )
+        return IngestResult(
+            image=small,
+            source_type=SourceType.RAW,
+            source_px=full.source_px,
+            alpha_was_present=full.alpha_was_present,
+        )
+
+    try:
+        header = pyvips.Image.new_from_file(str(path))
+        thumb = pyvips.Image.thumbnail(
+            str(path),
+            thumb_px,
+            height=thumb_px,
+            size="force",  # squash to thumb_px x thumb_px, aspect restored later
+            import_profile="srgb",  # fallback for untagged input
+            export_profile="srgb",
+        )
+    except pyvips.Error as exc:
+        raise BadSource(f"{path}: cannot decode: {exc}") from exc
+
+    orientation = (
+        int(header.get("orientation")) if header.get_typeof("orientation") != 0 else 1
+    )
+    source_px = (
+        (header.height, header.width)
+        if orientation in _SWAPPED_ORIENTATIONS
+        else (header.width, header.height)
+    )
+    image, alpha_was_present = _normalise(thumb, settings, path)
+    return IngestResult(
+        image=image,
+        source_type=source_type,
+        source_px=source_px,
+        alpha_was_present=alpha_was_present,
+    )

@@ -188,7 +188,10 @@ def compose_view(
         zoom_geometry = _full_zoom_geometry(settings)
         zoom_native_px = None
 
-    zoom = _compose_master(cutout, bbox, scale, zoom_geometry, settings)
+    # Render the zoom master once and keep it in memory: all four outputs
+    # (its own save, both crops, the display downscale) derive from this one
+    # buffer instead of re-running the resize/composite graph per sink.
+    zoom = _compose_master(cutout, bbox, scale, zoom_geometry, settings).copy_memory()
 
     # Display master: derived from the same lazy zoom pipeline by a pure
     # lanczos3 downscale (never an upscale — a shrunken zoom master smaller
@@ -207,7 +210,7 @@ def compose_view(
             display_geometry.width / zoom_geometry.width,
             vscale=display_geometry.height / zoom_geometry.height,
             kernel=settings.export.downscale_kernel,
-        )
+        ).copy_memory()  # rendered once; its save and its crop reuse the buffer
         if (display.width, display.height) != (display_geometry.width, display_geometry.height):
             raise BadSource(
                 f"display resize produced {display.width}x{display.height}, "
