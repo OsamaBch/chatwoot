@@ -62,6 +62,16 @@ def test_tables_and_indexes(migrated: None) -> None:
     assert item_columns["source_type"]["default"] == "'raw'::source_type"
     assert "source_px_width" in item_columns
     assert "source_px_height" in item_columns
+    # Revision 0003: attempts / cost / output paths on items.
+    assert not item_columns["attempts"]["nullable"]
+    assert item_columns["attempts"]["default"] == "0"
+    assert not item_columns["cost_usd"]["nullable"]
+    for column in ("zoom_path", "zoom_crop_path", "display_path", "display_crop_path"):
+        assert item_columns[column]["nullable"]
+    # Revision 0003: approval flag on barcodes.
+    barcode_columns = {c["name"]: c for c in inspector.get_columns("barcodes")}
+    assert not barcode_columns["has_approved_assets"]["nullable"]
+    assert barcode_columns["has_approved_assets"]["default"] == "false"
     barcode_uniques = inspector.get_unique_constraints("barcodes") + [
         {"column_names": ix["column_names"]}
         for ix in inspector.get_indexes("barcodes")

@@ -61,3 +61,43 @@ def test_multi_component_union() -> None:
 def test_empty_alpha_raises() -> None:
     with pytest.raises(BadSource, match="empty alpha"):
         compute_garment_bbox(_alpha(), SETTINGS)
+
+
+# --- Row-profile fallback: hook connected to the garment ---
+
+
+def test_connected_hook_trimmed_by_row_profile() -> None:
+    alpha = _alpha(1400, 1000)
+    # Garment 600 wide x 780 tall, shoulders at y=420.
+    alpha[420:1200, 200:800] = 255
+    # Hook: 40px wide, riding 120px above the shoulders, CONNECTED to the
+    # garment -> one component, so component-based exclusion cannot fire.
+    alpha[300:420, 480:520] = 255
+    bbox = compute_garment_bbox(alpha, SETTINGS)
+    assert bbox.excluded_hook is None  # single component: old path did nothing
+    # Row fallback: 40 < 0.08 * 600 = 48; band 120 <= 0.15 * 900 = 135.
+    assert bbox.hook_rows_trimmed == 120
+    # Bbox top lands at the shoulders; hook pixels stay in the alpha.
+    assert (bbox.left, bbox.top, bbox.width, bbox.height) == (200, 420, 600, 780)
+
+
+def test_wide_flat_top_edge_not_trimmed() -> None:
+    alpha = _alpha()
+    # Flatlay shirt: wide straight top edge -> the top row is already at
+    # maximum row width, so no narrow band exists.
+    alpha[100:800, 150:850] = 255
+    bbox = compute_garment_bbox(alpha, SETTINGS)
+    assert bbox.hook_rows_trimmed == 0
+    assert (bbox.top, bbox.height) == (100, 700)
+
+
+def test_tall_thin_object_protected_by_height_cap() -> None:
+    alpha = _alpha()
+    # Accessory with a long thin tip: rows 0-299 are 4px wide (< 8% of the
+    # 60px max row width), body rows 300-899 are 60px wide. The narrow band
+    # is 300 rows deep > 0.15 * 900 = 135 -> nothing is trimmed.
+    alpha[0:300, 498:502] = 255
+    alpha[300:900, 470:530] = 255
+    bbox = compute_garment_bbox(alpha, SETTINGS)
+    assert bbox.hook_rows_trimmed == 0
+    assert (bbox.top, bbox.height) == (0, 900)

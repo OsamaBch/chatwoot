@@ -71,6 +71,10 @@ class BboxSettings(_Frozen):
     # Exclude topmost connected component narrower than this fraction of
     # bbox width (hanger hook — pixels stay, bbox ignores).
     hook_max_width_ratio: float = 0.08
+    # Row-profile fallback for the connected-hook case: a contiguous band of
+    # narrow rows at the bbox top is trimmed only when its height is at most
+    # this fraction of bbox height (protects tall thin objects).
+    hook_max_height_ratio: float = 0.15
     # Union all components above this fraction of image area.
     min_component_area_ratio: float = 0.02
 

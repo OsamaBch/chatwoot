@@ -10,6 +10,7 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     JSON,
@@ -19,6 +20,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -142,6 +144,11 @@ class Barcode(Base):
     )
     barcode: Mapped[str] = mapped_column(String(14), nullable=False, unique=True)
     scale_factor: Mapped[float | None] = mapped_column(Float)
+    # A barcode with approved assets requires explicit replace confirmation;
+    # old files are versioned (_02, _03), never overwritten.
+    has_approved_assets: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -177,6 +184,19 @@ class Item(Base):
     # Full source resolution, upright (drives the no-upscale rule).
     source_px_width: Mapped[int | None] = mapped_column(Integer)
     source_px_height: Mapped[int | None] = mapped_column(Integer)
+    # Generation attempts made for this item (drives tier escalation).
+    attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    # Provider spend for this item across all attempts/tiers.
+    cost_usd: Mapped[Decimal] = mapped_column(
+        Numeric(12, 4), nullable=False, default=Decimal(0), server_default=text("0")
+    )
+    # The four output files of one compositor invocation (invariant 2).
+    zoom_path: Mapped[str | None] = mapped_column(Text)
+    zoom_crop_path: Mapped[str | None] = mapped_column(Text)
+    display_path: Mapped[str | None] = mapped_column(Text)
+    display_crop_path: Mapped[str | None] = mapped_column(Text)
     # sha256(source_sha256 + core_sha + mode_version + reference_sha +
     # model_snapshot) — same inputs never billed twice, across restarts.
     idempotency_key: Mapped[str] = mapped_column(

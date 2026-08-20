@@ -44,6 +44,9 @@ class GarmentBbox:
     height: int
     components: tuple[ComponentBox, ...]
     excluded_hook: ComponentBox | None
+    # Rows trimmed from the bbox top by the row-profile fallback (connected
+    # hanger hook); 0 when the fallback did not fire.
+    hook_rows_trimmed: int = 0
 
     @property
     def centre_x(self) -> float:
@@ -84,6 +87,49 @@ def _label_components(mask: npt.NDArray[np.bool_]) -> list[ComponentBox]:
             )
         )
     return boxes
+
+
+def _trim_connected_hook(
+    mask: npt.NDArray[np.bool_],
+    left: int,
+    top: int,
+    width: int,
+    height: int,
+    settings: BboxSettings,
+) -> tuple[int, int, int, int, int]:
+    """Row-profile fallback for the connected-hook case.
+
+    In real hanging photos the hook, hanger and garment form ONE connected
+    component, so component-based exclusion never fires. Scan the per-row
+    horizontal extent of garment pixels over the bbox: a contiguous band of
+    rows at the top narrower than hook_max_width_ratio x the bbox's maximum
+    row width is the hook. Trim it from the bbox only when the band is at
+    most hook_max_height_ratio x bbox height (a tall thin object keeps its
+    full bbox). Pixels are never touched — only the box shrinks.
+
+    Returns (left, top, width, height, rows_trimmed).
+    """
+    region = mask[top : top + height, left : left + width]
+    # Per-row width = horizontal extent of non-transparent pixels (0 for
+    # empty rows).
+    any_row = region.any(axis=1)
+    first = np.where(any_row, np.argmax(region, axis=1), 0)
+    last = np.where(any_row, width - 1 - np.argmax(region[:, ::-1], axis=1), -1)
+    row_widths = np.where(any_row, last - first + 1, 0)
+
+    threshold = settings.hook_max_width_ratio * int(row_widths.max())
+    below = row_widths < threshold
+    band = int(np.argmin(below)) if not bool(below.all()) else height
+    if band == 0 or band > settings.hook_max_height_ratio * height:
+        return left, top, width, height, 0
+
+    trimmed = region[band:]
+    ys, xs = np.nonzero(trimmed)
+    new_left = left + int(xs.min())
+    new_width = int(xs.max() - xs.min() + 1)
+    new_top = top + band + int(ys.min())
+    new_height = int(ys.max() - ys.min() + 1)
+    return new_left, new_top, new_width, new_height, band + int(ys.min())
 
 
 def _union(boxes: list[ComponentBox]) -> tuple[int, int, int, int]:
@@ -127,6 +173,12 @@ def compute_garment_bbox(
             kept = [c for c in kept if c is not topmost]
             left, top, width, height = _union(kept)
 
+    # Connected-hook fallback: runs on whatever bbox the component-based
+    # exclusion produced (hook + hanger + garment as one component).
+    left, top, width, height, hook_rows_trimmed = _trim_connected_hook(
+        mask, left, top, width, height, settings
+    )
+
     return GarmentBbox(
         left=left,
         top=top,
@@ -134,4 +186,5 @@ def compute_garment_bbox(
         height=height,
         components=tuple(kept),
         excluded_hook=excluded_hook,
+        hook_rows_trimmed=hook_rows_trimmed,
     )
