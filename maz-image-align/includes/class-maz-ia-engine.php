@@ -291,7 +291,7 @@ final class Maz_IA_Engine {
 		$dx = (int) round( ( $o['canvas_w'] - $nw ) / 2 ); $dy = (int) $o['top_margin'];
 
 		// What sits above the ball (hanger hook) is kept when it fits inside the top margin.
-		$et = empty( $o['keep_hook'] ) ? 0 : min( $y0, (int) floor( $dy / $scale ) );
+		$et = empty( $o['keep_hook'] ) ? min( $y0, (int) ceil( 6 / $scale ) ) : min( $y0, (int) floor( $dy / $scale ) ); // keep_hook off: still a few px above the ball
 		$el = 0; $er = 0; $eb = 0; // sides/bottom stay clean canvas background (no floor shadow, no props)
 		$ET = (int) round( $et * $scale ); $EL = (int) round( $el * $scale );
 		$ER = (int) round( $er * $scale ); $EB = (int) round( $eb * $scale );

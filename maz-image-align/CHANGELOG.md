@@ -1,5 +1,15 @@
 # Changelog — Mazyoud Image Align
 
+## 2.0.2 — 2026-10-24
+
+- **Fix: "aligned but nothing changed" on sites with a WebP converter.** Converter for Media keeps its
+  WebP/AVIF copies in `wp-content/uploads-webpc/` and serves them instead of the JPEG by URL rewrite, so
+  the browser kept showing the old picture after the file was replaced (a `?v=` buster cannot help there).
+  Align and Revert now delete those copies (through the plugin's `webpc_delete_paths` action and by path),
+  then ask the converter to rebuild them (`webpc_convert_attachment` / `webpc_convert_paths`). Hook
+  `maz_ia_purge_converted` is available for other converters. Smoke test covers the purge.
+- With "Keep hanger hook" off, a few pixels above the detected ball row are still kept so the round top is never shaved.
+
 ## 2.0.1 — 2026-10-24
 
 - **Fix: light-coloured hanger balls were cut at the top.** The ball anchor used a luminance cut

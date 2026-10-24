@@ -17,7 +17,8 @@ $GLOBALS['uploads'] = sys_get_temp_dir() . '/maz-smoke-' . getmypid();
 $GLOBALS['cap_edit'] = true;
 @mkdir( $GLOBALS['uploads'] . '/2026/10', 0777, true );
 define( 'ABSPATH', $GLOBALS['uploads'] . '/wp/' ); @mkdir( ABSPATH . 'wp-admin/includes', 0777, true ); file_put_contents( ABSPATH . 'wp-admin/includes/image.php', '<?php' );
-define( 'DAY_IN_SECONDS', 86400 );
+define( 'DAY_IN_SECONDS', 86400 ); define( 'WP_CONTENT_DIR', dirname( $GLOBALS['uploads'] ) );
+function has_action() { return false; }
 class WP_Error { public $c; public $m; function __construct( $c, $m ) { $this->c = $c; $this->m = $m; } function get_error_message() { return $this->m; } }
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
 function add_action() {} function add_filter() {} function remove_filter() {} function do_action( $h ) { $GLOBALS['wp_actions'][] = $h; } function apply_filters( $h, $v ) { return $v; }
@@ -72,6 +73,7 @@ $orig_md5 = md5_file( "$dir/photo.png" );
 $GLOBALS['wp_posts'][11] = [ 'mime' => 'image/png' ];
 update_post_meta( 11, '_wp_attached_file', '2026/10/photo.png' );
 wp_update_attachment_metadata( 11, wp_generate_attachment_metadata( 11, "$dir/photo.png" ) ); // pre-existing sizes + webp sidecar
+$webpc = WP_CONTENT_DIR . '/uploads-webpc/' . basename( $GLOBALS['uploads'] ) . '/2026/10'; @mkdir( $webpc, 0777, true ); file_put_contents( "$webpc/photo.png.webp", 'stale' );
 $tmp_before = glob( sys_get_temp_dir() . '/maz-align*' );
 
 echo "align (png → jpg)\n";
@@ -83,6 +85,7 @@ ok( get_post_meta( 11, '_maz_orig_file' ) === '2026/10/photo-orig.png', 'backup 
 ok( md5_file( "$dir/photo-orig.png" ) === $orig_md5, 'backup is not the pristine original' );
 $expect = [ 'photo-150x150.jpg', 'photo-150x150.jpg.webp', 'photo-orig.png', 'photo.jpg' ];
 ok( files( $dir ) === $expect, 'files after align: ' . implode( ', ', files( $dir ) ) );
+ok( ! is_file( "$webpc/photo.png.webp" ), 'stale Converter-for-Media copy not purged' );
 $sz = getimagesize( "$dir/photo.jpg" ); ok( $sz[0] === 2194 && $sz[1] === 2560, 'output size' );
 ok( (int) get_post_meta( 11, '_maz_aligned' ) > 0 && get_post_meta( 11, '_maz_type' ) === 'jacket', 'meta' );
 $h = Maz_IA_Files::history( 11 ); ok( count( $h ) === 1 && $h[0]['action'] === 'align' && ! empty( $h[0]['settings'] ), 'history entry' );
@@ -138,5 +141,5 @@ $tmp_after = glob( sys_get_temp_dir() . '/maz-align*' );
 ok( $tmp_after === $tmp_before, 'temp leftovers: ' . implode( ', ', array_diff( $tmp_after, $tmp_before ) ) );
 
 printf( "\n%d passed, %d failed\n", $pass, $fail );
-exec( 'rm -rf ' . escapeshellarg( $GLOBALS['uploads'] ) );
+exec( 'rm -rf ' . escapeshellarg( $GLOBALS['uploads'] ) . ' ' . escapeshellarg( WP_CONTENT_DIR . '/uploads-webpc' ) );
 exit( $fail ? 1 : 0 );

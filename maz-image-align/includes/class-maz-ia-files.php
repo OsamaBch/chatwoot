@@ -186,10 +186,12 @@ final class Maz_IA_Files {
 		$removed = self::delete_generated_files( $id, $src );
 		$info = pathinfo( $src );
 		$dest = $info['dirname'] . '/' . $info['filename'] . '.jpg'; // output is always JPEG
+		self::purge_converted( array_merge( [ $src, $dest ], $removed['paths'] ) );
 		if ( $dest !== $src && is_file( $src ) ) { @unlink( $src ); self::delete_sidecars( $src ); }
 		if ( ! self::move( $tmp, $dest ) ) return new WP_Error( 'maz_move', 'Could not move the aligned file into the uploads folder' );
 
 		self::install_file( $id, $dest, 'image/jpeg' );
+		self::reconvert( $id, $dest );
 		update_post_meta( $id, self::META_ALIGNED, time() );
 		update_post_meta( $id, self::META_TYPE, $type );
 		if ( $r['flags'] ) update_post_meta( $id, self::META_FLAGS, $r['flags'] ); else delete_post_meta( $id, self::META_FLAGS );
@@ -197,7 +199,7 @@ final class Maz_IA_Files {
 			'action' => 'align', 'type' => $type, 'engine' => $r['engine'], 'ms' => $r['ms'],
 			'settings' => Maz_IA_Engine::settings_hash( $o, $types ), 'flags' => $r['flags'], 'ball' => $r['ball']['confidence'],
 		] );
-		self::purge_caches( $id, array_merge( [ $old_url, wp_get_attachment_url( $id ) ], $removed ) );
+		self::purge_caches( $id, array_merge( [ $old_url, wp_get_attachment_url( $id ) ], $removed['urls'] ) );
 		do_action( 'maz_ia_aligned', $id, $dest, $r );
 
 		$r['id'] = $id; $r['url'] = wp_get_attachment_url( $id ) . '?v=' . time();
@@ -218,16 +220,18 @@ final class Maz_IA_Files {
 		$removed = self::delete_generated_files( $id, $cur );
 		$bi = pathinfo( $backup ); $ci = pathinfo( $cur );
 		$dest = $ci['dirname'] . '/' . $ci['filename'] . ( isset( $bi['extension'] ) ? '.' . $bi['extension'] : '' );
+		self::purge_converted( array_merge( [ $cur, $dest ], $removed['paths'] ) );
 		if ( is_file( $cur ) ) { @unlink( $cur ); self::delete_sidecars( $cur ); }
 		if ( ! self::move( $backup, $dest ) ) return new WP_Error( 'maz_move', 'Could not move the backup back' );
 
 		$ft = wp_check_filetype( $dest );
 		self::install_file( $id, $dest, $ft['type'] ?: 'image/jpeg' );
+		self::reconvert( $id, $dest );
 		delete_post_meta( $id, self::META_ALIGNED );
 		delete_post_meta( $id, self::META_ORIG );
 		delete_post_meta( $id, self::META_FLAGS );
 		self::push_history( $id, [ 'action' => 'revert' ] );
-		self::purge_caches( $id, array_merge( [ $old_url, wp_get_attachment_url( $id ) ], $removed ) );
+		self::purge_caches( $id, array_merge( [ $old_url, wp_get_attachment_url( $id ) ], $removed['urls'] ) );
 		do_action( 'maz_ia_reverted', $id, $dest );
 		return [ 'id' => $id, 'url' => wp_get_attachment_url( $id ) . '?v=' . time(), 'state' => self::state( $id ) ];
 	}
@@ -256,7 +260,7 @@ final class Maz_IA_Files {
 
 	/**
 	 * Delete every generated file of the attachment (sizes, -scaled original, WebP/AVIF sidecars).
-	 * Returns the URLs of removed files so caches can be purged.
+	 * Returns ['urls' => [...], 'paths' => [...]] of the removed files so caches and converted copies can be purged.
 	 */
 	private static function delete_generated_files( $id, $main ) {
 		$meta = wp_get_attachment_metadata( $id );
@@ -269,14 +273,47 @@ final class Maz_IA_Files {
 		}
 		$files = apply_filters( 'maz_ia_generated_files', array_unique( $files ), $id, $main, $meta );
 		$base_url = trailingslashit( dirname( wp_get_attachment_url( $id ) ) );
-		$urls = [];
+		$urls = []; $paths = [];
 		$backup = self::backup_for( $id );
 		foreach ( $files as $f ) {
 			if ( $backup && realpath( $f ) === realpath( $backup ) ) continue; // never the pristine copy
+			$paths[] = $f;
 			if ( is_file( $f ) ) { @unlink( $f ); $urls[] = $base_url . wp_basename( $f ); }
 			self::delete_sidecars( $f );
 		}
-		return $urls;
+		return [ 'urls' => $urls, 'paths' => $paths ];
+	}
+
+	/**
+	 * Remove WebP/AVIF copies kept OUTSIDE the uploads folder by converter plugins, which are served in place
+	 * of the JPEG by URL rewrite (so the browser keeps showing the old image after a replace):
+	 * Converter for Media (`wp-content/uploads-webpc/…`), via its own action when present and by path otherwise.
+	 */
+	private static function purge_converted( array $paths ) {
+		$paths = array_values( array_unique( array_filter( $paths ) ) );
+		if ( ! $paths ) return;
+		if ( has_action( 'webpc_delete_paths' ) ) do_action( 'webpc_delete_paths', $paths );
+		$content = rtrim( str_replace( '\\', '/', WP_CONTENT_DIR ), '/' );
+		foreach ( $paths as $p ) {
+			$pn = str_replace( '\\', '/', $p );
+			if ( strpos( $pn, $content . '/' ) !== 0 ) continue;
+			$rel = substr( $pn, strlen( $content ) + 1 ); // e.g. uploads/2026/10/photo.jpg
+			foreach ( [ 'uploads-webpc' ] as $dir ) foreach ( [ '.webp', '.avif' ] as $ext ) {
+				$c = $content . '/' . $dir . '/' . $rel . $ext;
+				if ( is_file( $c ) ) @unlink( $c );
+			}
+		}
+		do_action( 'maz_ia_purge_converted', $paths );
+	}
+
+	/** Ask converter plugins to build fresh WebP/AVIF copies of the new file and its sizes. */
+	private static function reconvert( $id, $file ) {
+		if ( has_action( 'webpc_convert_attachment' ) ) { do_action( 'webpc_convert_attachment', $id ); return; }
+		if ( has_action( 'webpc_convert_paths' ) ) {
+			$meta = wp_get_attachment_metadata( $id ); $dir = dirname( $file ); $paths = [ $file ];
+			if ( ! empty( $meta['sizes'] ) ) foreach ( $meta['sizes'] as $sz ) if ( ! empty( $sz['file'] ) ) $paths[] = $dir . '/' . wp_basename( $sz['file'] );
+			do_action( 'webpc_convert_paths', $paths );
+		}
 	}
 
 	/** `file.jpg.webp`, `file.webp`, `file.jpg.avif`, `file.avif` written by WebP/AVIF converter plugins. */
