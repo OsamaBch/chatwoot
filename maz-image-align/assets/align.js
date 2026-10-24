@@ -70,7 +70,7 @@
       var d = res.data, label = (MazIA.types[d.type] || {}).label || d.type;
       var flags = d.flags.length ? '<ul class="maz-ia-pv-flags">' + d.flags.map(function (f) { return '<li>⚠ ' + esc(f) + '</li>'; }).join('') + '</ul>' : '<p class="maz-ia-pv-ok">No warnings.</p>';
       var $m = $('<div class="maz-ia-modal" role="dialog" aria-modal="true" aria-label="Align preview"><div class="maz-ia-modal-box">' +
-        '<div class="maz-ia-modal-head"><strong>Align preview</strong> — ' + esc(label) + ' · ball: ' + esc(d.ball.confidence) + ' · scale ×' + d.scale + ' · ' + esc(d.engine) + ' ' + d.ms + ' ms<button type="button" class="maz-ia-modal-x" aria-label="Close">×</button></div>' +
+        '<div class="maz-ia-modal-head"><strong>Align preview</strong> — ' + esc(label) + ' · ball: ' + esc(d.ball.confidence) + ' · scale ×' + d.scale + ' · ' + esc(d.engine) + ' ' + d.ms + ' ms · from ' + (d.source === 'backup' ? 'pristine backup' : 'current file (no backup)') + '<button type="button" class="maz-ia-modal-x" aria-label="Close">×</button></div>' +
         '<div class="maz-ia-modal-body"><figure><img src="' + esc(d.original) + '" alt=""><figcaption>Original ' + d.src_size[0] + '×' + d.src_size[1] + '</figcaption></figure>' +
         '<figure><img src="' + d.result + '" alt=""><figcaption>Result (reduced preview)</figcaption></figure></div>' + flags +
         '<div class="maz-ia-modal-foot"><button type="button" class="button maz-ia-modal-cancel">Cancel</button> <button type="button" class="button button-primary maz-ia-modal-apply">Apply</button></div></div></div>');

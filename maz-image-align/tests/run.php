@@ -136,9 +136,10 @@ function check_output( $file, $o, $bg ) {
 	for ( $y = 0; $y < min( $H, $o['top_margin'] + 60 ) && $ball_top === null; $y++ ) {
 		$run = 0;
 		for ( $x = $bx0; $x < $bx1; $x++ ) {
-			$p = imagecolorat( $im, $x, $y );
-			$l = 0.299 * ( ( $p >> 16 ) & 255 ) + 0.587 * ( ( $p >> 8 ) & 255 ) + 0.114 * ( $p & 255 );
-			if ( $l < $tb ) { if ( ++$run >= $need ) { $ball_top = $y; break; } } else $run = 0;
+			$p = imagecolorat( $im, $x, $y ); $r = ( $p >> 16 ) & 255; $g = ( $p >> 8 ) & 255; $b = $p & 255;
+			$l = 0.299 * $r + 0.587 * $g + 0.114 * $b;
+			$is = max( abs( $r - $bg[0] ), abs( $g - $bg[1] ), abs( $b - $bg[2] ) ) >= $o['color_delta'] && $l < $tb; // ball = coloured, not too bright
+			if ( $is ) { if ( ++$run >= $need ) { $ball_top = $y; break; } } else $run = 0;
 		}
 	}
 	// margins: a pixel is "subject" when clearly different from the canvas background
@@ -208,6 +209,7 @@ function synthetic_set( $dir ) {
 		[ 'f5-white-garment', 1200, 1400, [ 0xF5, 0xF5, 0xF5 ], [ 230, 230, 228 ], 0.50, [ 'shape' => 'tshirt', 'shade' => 12 ] ],
 		[ 'small-upscale-cap', 600,  700,  [ 0xE7, 0xE7, 0xE7 ], [ 60, 60, 60 ],    0.50, [ 'shape' => 'tshirt', 'opts' => [ 'max_upscale' => 125 ], 'flags' => [ 'upscale_capped' ], 'skip_ball' => true ] ],
 		[ 'e7-offcentre',     1200, 1400, [ 0xE7, 0xE7, 0xE7 ], [ 40, 40, 50 ],    0.36, [ 'shape' => 'jacket' ] ],
+		[ 'f5-light-ball',    1200, 1400, [ 0xF5, 0xF5, 0xF5 ], [ 70, 70, 80 ],    0.50, [ 'shape' => 'set', 'ball' => [ 238, 160, 90 ] ] ],
 		[ 'e7-wide-puffer',   1200, 1400, [ 0xE7, 0xE7, 0xE7 ], [ 30, 90, 60 ],    0.50, [ 'shape' => 'wide', 'flags' => [ 'width_limited' ] ] ],
 		[ 'png-alpha',        1000, 1167, null,                 [ 70, 50, 120 ],   0.50, [ 'shape' => 'tshirt', 'png' => true ] ],
 		[ 'full-2194x2560',   2194, 2560, [ 0xEB, 0xEA, 0xE8 ], [ 50, 50, 50 ],    0.50, [ 'shape' => 'set', 'shadow' => true ] ],
@@ -224,7 +226,7 @@ function synthetic_set( $dir ) {
 		}
 		if ( ! empty( $opt['shadow'] ) ) imagefilledrectangle( $im, 0, $H - 120, $W, $H, imagecolorallocate( $im, $bgc[0] - 25, $bgc[1] - 25, $bgc[2] - 25 ) ); // dark floor shadow in the ring
 		$c   = imagecolorallocate( $im, $col[0], $col[1], $col[2] );
-		$wood = imagecolorallocate( $im, 120, 80, 40 );
+		$wood = imagecolorallocate( $im, 120, 80, 40 ); $ballc = ! empty( $opt['ball'] ) ? imagecolorallocate( $im, $opt['ball'][0], $opt['ball'][1], $opt['ball'][2] ) : $wood;
 		$cx  = (int) ( $W * $cxf );
 		$shape = $opt['shape'];
 		$truth = null;
@@ -236,7 +238,7 @@ function synthetic_set( $dir ) {
 			imagesetthickness( $im, max( 2, (int) ( $W / 400 ) ) );
 			imagearc( $im, $cx, $ball_top - $r, $r * 2, $r * 2, 180, 360, imagecolorallocate( $im, 90, 90, 95 ) );
 			if ( ! empty( $opt['dust'] ) ) imagefilledellipse( $im, $cx + 90, $ball_top - 3 * $r, 6, 6, imagecolorallocate( $im, 60, 60, 60 ) );
-			imagefilledellipse( $im, $cx, $ball_top + $r, $r * 2, $r * 2, $wood );
+			imagefilledellipse( $im, $cx, $ball_top + $r, $r * 2, $r * 2, $ballc );
 			$neck_y = $ball_top + 2 * $r; $sh_y = $neck_y + (int) ( $H * 0.04 ); $half = (int) ( $W * 0.18 );
 			imagefilledpolygon( $im, [ $cx - 4, $neck_y, $cx + 4, $neck_y, $cx + $half, $sh_y, $cx + $half, $sh_y + 10, $cx - $half, $sh_y + 10, $cx - $half, $sh_y ], $wood );
 			// garment body

@@ -99,7 +99,7 @@ final class Maz_IA_Settings {
 			'Detection' => [
 				'color_delta'    => [ 'Colour delta (0–255)', 'A pixel belongs to the garment when any RGB channel differs from the background by at least this. Lower = catches lighter garments, higher = ignores more noise. Default 12.' ],
 				'ring_pct'       => [ 'Background ring (% of short side)', 'Background colour is the outlier-free median of this border band.' ],
-				'ball_threshold' => [ 'Hanger ball luminance (0–255)', 'Pixels darker than this may belong to the ball. Default 205.' ],
+				'ball_threshold' => [ 'Hanger ball max luminance (0–255)', 'The ball is found by colour distance like the garment; pixels brighter than this are never counted as ball. Default 250.' ],
 				'ball_min_pct'   => [ 'Ball min width (% of width)', 'Narrower dark runs (hook wire, threads) are ignored. Default 2.' ],
 				'ball_max_pct'   => [ 'Ball max width (% of width)', 'A wider dark shape at the top is not a ball (mannequin shoulders, shoes) → refused. Default 14.' ],
 				'ball_band_pct'  => [ 'Ball search band (% of width, centred)', 'Off-centre hangers need a wider band. Default 70.' ],

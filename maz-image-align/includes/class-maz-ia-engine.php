@@ -36,7 +36,7 @@ final class Maz_IA_Engine {
 			'color_delta'    => 12,   // subject = max per-channel distance from bg ≥ this
 			'ball_min_pct'   => 2,    // min contiguous dark run width (% of width) to count as the ball
 			'ball_max_pct'   => 14,   // wider than this at the top = not a ball (shoulders, shoe…)
-			'ball_threshold' => 205,  // absolute luminance below which a pixel may belong to the ball
+			'ball_threshold' => 250,  // pixels brighter than this are never ball (the ball is found by colour distance, like the garment)
 			'ball_band_pct'  => 70,   // ball must sit inside the central N % of the width
 			'min_dark_px'    => 3,    // subject px per row/col needed (noise filter, full-res px)
 			'edge_pad'       => 4,    // ignore pixels this close to the source border (full-res px)
@@ -306,9 +306,9 @@ final class Maz_IA_Engine {
 
 	/**
 	 * Map analysis results to full resolution (with safety margin) and refine the ball row.
-	 * $lum_rows: callable(x, y, w, h) → string of luminance bytes for that full-res region.
+	 * $px_rows: callable(x, y, w, h) → RGB bytes (3 per pixel) of that full-res region, transparent = background.
 	 */
-	private static function to_full_res( $an, $W, $H, $fx, $fy, $o, $lum_rows, $need = 0 ) {
+	private static function to_full_res( $an, $W, $H, $fx, $fy, $o, $px_rows, $need = 0 ) {
 		$s  = (int) ceil( max( $fx, $fy ) ) + 1;
 		$x0 = max( 0, (int) floor( $an['x0'] * $fx ) - $s );
 		$x1 = min( $W, (int) ceil( ( $an['x1'] ) * $fx ) + $s );
@@ -321,13 +321,15 @@ final class Maz_IA_Engine {
 			$ry0 = max( 0, (int) floor( ( $b['y'] - 1 ) * $fy ) ); $ry1 = min( $H - 1, (int) ceil( ( $b['y'] + 2 ) * $fy ) );
 			$rw  = $rx1 - $rx0 + 1; $rh = $ry1 - $ry0 + 1;
 			if ( $need < 4 ) $need = max( 4, (int) round( $W * $o['ball_min_pct'] / 100 ) );
-			$lum  = $lum_rows( $rx0, $ry0, $rw, $rh );
-			if ( is_string( $lum ) && strlen( $lum ) >= $rw * $rh ) {
-				$tb = (int) $o['ball_threshold'];
+			$px   = $px_rows( $rx0, $ry0, $rw, $rh );
+			if ( is_string( $px ) && strlen( $px ) >= $rw * $rh * 3 ) {
+				$tb = (int) $o['ball_threshold']; $delta = (int) $o['color_delta']; [ $bgr, $bgg, $bgb ] = $an['bg'];
 				for ( $y = 0; $y < $rh && $ball_y === null; $y++ ) {
-					$run = 0; $base = $y * $rw;
+					$run = 0; $base = $y * $rw * 3;
 					for ( $x = 0; $x < $rw; $x++ ) {
-						if ( ord( $lum[ $base + $x ] ) < $tb ) { if ( ++$run >= $need ) { $ball_y = $ry0 + $y; break; } } else $run = 0;
+						$i = $base + $x * 3; $r = ord( $px[ $i ] ); $g = ord( $px[ $i + 1 ] ); $b = ord( $px[ $i + 2 ] );
+						$is = max( abs( $r - $bgr ), abs( $g - $bgg ), abs( $b - $bgb ) ) >= $delta && ( 0.299 * $r + 0.587 * $g + 0.114 * $b ) < $tb;
+						if ( $is ) { if ( ++$run >= $need ) { $ball_y = $ry0 + $y; break; } } else $run = 0;
 					}
 				}
 			}
@@ -342,14 +344,14 @@ final class Maz_IA_Engine {
 	 * Full-res bbox + geometry. Two passes: the "top of the ball" is the first row whose dark run is
 	 * ball_min_pct of the OUTPUT width, so the anchor is identical whatever the source scale.
 	 */
-	private static function place( $an, $W, $H, $fx, $fy, $o, $lum_rows ) {
-		[ $x0, $y0, $x1, $y1, $ball_y ] = self::to_full_res( $an, $W, $H, $fx, $fy, $o, $lum_rows );
+	private static function place( $an, $W, $H, $fx, $fy, $o, $px_rows ) {
+		[ $x0, $y0, $x1, $y1, $ball_y ] = self::to_full_res( $an, $W, $H, $fx, $fy, $o, $px_rows );
 		$geo = self::geometry( [ $x0, $y0, $x1, $y1 ], $W, $H, $o );
 		if ( $ball_y !== null ) {
 			$need    = max( 4, (int) round( $o['canvas_w'] * $o['ball_min_pct'] / 100 / $geo['scale'] ) );
 			$ball_px = $an['ball']['width'] * $fx; // ball diameter in source px
 			if ( $need < 0.8 * $ball_px ) { // only when the ball is clearly wider than the criterion (tiny sources keep pass 1)
-				$r2 = self::to_full_res( $an, $W, $H, $fx, $fy, $o, $lum_rows, $need );
+				$r2 = self::to_full_res( $an, $W, $H, $fx, $fy, $o, $px_rows, $need );
 				if ( $r2[4] !== null ) { [ $x0, $y0, $x1, $y1, $ball_y ] = $r2; $geo = self::geometry( [ $x0, $y0, $x1, $y1 ], $W, $H, $o ); }
 			}
 		}
@@ -404,16 +406,17 @@ final class Maz_IA_Engine {
 		unset( $buf );
 		if ( ! $an['ok'] ) { imagedestroy( $img ); return $an; }
 
-		$lum_rows = function ( $x, $y, $w, $h ) use ( $img ) {
-			$s = str_repeat( "\0", $w * $h );
+		$bg = $an['bg'];
+		$px_rows = function ( $x, $y, $w, $h ) use ( $img, $bg ) {
+			$s = str_repeat( "\0", $w * $h * 3 );
 			for ( $yy = 0; $yy < $h; $yy++ ) for ( $xx = 0; $xx < $w; $xx++ ) {
-				$p = imagecolorat( $img, $x + $xx, $y + $yy );
-				$s[ $yy * $w + $xx ] = ( ( $p >> 24 ) & 127 ) > 63 ? "\xff" // transparent = background
-					: chr( (int) ( 0.299 * ( ( $p >> 16 ) & 255 ) + 0.587 * ( ( $p >> 8 ) & 255 ) + 0.114 * ( $p & 255 ) ) );
+				$p = imagecolorat( $img, $x + $xx, $y + $yy ); $i = ( $yy * $w + $xx ) * 3;
+				if ( ( ( $p >> 24 ) & 127 ) > 63 ) { $s[ $i ] = chr( $bg[0] ); $s[ $i + 1 ] = chr( $bg[1] ); $s[ $i + 2 ] = chr( $bg[2] ); } // transparent = background
+				else { $s[ $i ] = chr( ( $p >> 16 ) & 255 ); $s[ $i + 1 ] = chr( ( $p >> 8 ) & 255 ); $s[ $i + 2 ] = chr( $p & 255 ); }
 			}
 			return $s;
 		};
-		[ $bbox, $geo, $ball_y ] = self::place( $an, $W, $H, $fx, $fy, $o, $lum_rows );
+		[ $bbox, $geo, $ball_y ] = self::place( $an, $W, $H, $fx, $fy, $o, $px_rows );
 
 		$canvas = imagecreatetruecolor( (int) $o['canvas_w'], (int) $o['canvas_h'] );
 		if ( ! $canvas ) { imagedestroy( $img ); return self::error( 'memory', 'GD cannot allocate the output canvas' ); }
@@ -514,11 +517,11 @@ final class Maz_IA_Engine {
 				$im = $im->mergeImageLayers( Imagick::LAYERMETHOD_FLATTEN );
 			}
 
-			$lum_rows = function ( $x, $y, $w, $h ) use ( $im ) {
-				$px = $im->exportImagePixels( $x, $y, $w, $h, 'I', Imagick::PIXEL_CHAR );
+			$px_rows = function ( $x, $y, $w, $h ) use ( $im ) {
+				$px = $im->exportImagePixels( $x, $y, $w, $h, 'RGB', Imagick::PIXEL_CHAR );
 				return $px ? self::im_bytes( $px ) : '';
 			};
-			[ $bbox, $geo, $ball_y ] = self::place( $an, $W, $H, $fx, $fy, $o, $lum_rows );
+			[ $bbox, $geo, $ball_y ] = self::place( $an, $W, $H, $fx, $fy, $o, $px_rows );
 			$s = $geo['src']; $d = $geo['dst'];
 
 			$im->cropImage( $s['w'], $s['h'], $s['x'], $s['y'] );

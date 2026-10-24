@@ -202,7 +202,7 @@ final class Maz_IA_Admin {
 		wp_send_json_success( [
 			'id' => $id, 'type' => $r['type'], 'result' => 'data:image/jpeg;base64,' . base64_encode( $data ),
 			'original' => $orig ? $orig[0] : wp_get_attachment_url( $id ),
-			'ball' => $r['ball'], 'scale' => $r['scale'], 'engine' => $r['engine'], 'ms' => $r['ms'], 'src_size' => $r['src_size'],
+			'ball' => $r['ball'], 'scale' => $r['scale'], 'engine' => $r['engine'], 'source' => $r['source'], 'ms' => $r['ms'], 'src_size' => $r['src_size'],
 			'flags' => array_map( function ( $f ) use ( $labels ) { return $labels[ $f ] ?? $f; }, $r['flags'] ),
 		] );
 	}

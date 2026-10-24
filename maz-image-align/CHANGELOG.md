@@ -1,5 +1,17 @@
 # Changelog — Mazyoud Image Align
 
+## 2.0.1 — 2026-10-24
+
+- **Fix: light-coloured hanger balls were cut at the top.** The ball anchor used a luminance cut
+  (`ball_threshold` 205); the lit top half of a light orange / beech ball is brighter than that, so the
+  "top of the ball" was found mid-ball and the crop started there. The ball is now found with the same
+  colour-distance mask as the garment (orange vs grey), in the analysis pass and in the full-resolution
+  refinement; `ball_threshold` only excludes pixels brighter than 250 now. Saved values ≤ 205 are migrated.
+  New synthetic test case `f5-light-ball`.
+- Preview header shows whether the render started from the pristine backup or from the current file
+  (images aligned by 1.2.0 without a backup have no pristine original: the current file is backed up and
+  used as the source, so a redo looks the same as before).
+
 ## 2.0.0 — 2026-10-24
 
 Full review and hardening of 1.2.0. The plugin is now split into an image engine with no

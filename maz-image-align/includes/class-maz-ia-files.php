@@ -169,6 +169,7 @@ final class Maz_IA_Files {
 		$r = Maz_IA_Engine::process( $input, $tmp, $o );
 		if ( empty( $r['ok'] ) ) { @unlink( $tmp ); return new WP_Error( 'maz_' . $r['code'], $r['error'] ); }
 		$r['type'] = $type;
+		$r['source'] = $backup ? 'backup' : 'current';
 
 		if ( $preview ) { $r['tmp'] = $tmp; return $r; }
 
