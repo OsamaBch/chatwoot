@@ -1,0 +1,50 @@
+/* Mazyoud Image Align — admin styles */
+.maz-ia-btn.maz-ia-done, .maz-ia-overlay.maz-ia-done { background: #e6f4ea; border-color: #34a853; color: #1e7e34; }
+.maz-ia-status { margin-left: 6px; font-size: 12px; }
+.maz-ia-status.maz-ia-err { color: #c00; }
+.maz-ia-wrap .maz-ia-type { max-width: 200px; font-size: 12px; vertical-align: middle; }
+.column-maz_ia .maz-ia-type { max-width: 160px; margin-bottom: 3px; }
+.maz-ia-wrap .maz-ia-revert[hidden] { display: none; }
+.maz-ia-flag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 3px; background: #fff3cd; color: #7a5600; font-size: 11px; cursor: help; }
+.maz-ia-history { margin-top: 6px; font-size: 11px; color: #555; }
+.maz-ia-history ul { margin: 4px 0 0 12px; list-style: disc; }
+
+/* product gallery overlay — visible on hover, keyboard focus, or after a tap on touch devices */
+#product_images_container li.image { position: relative; }
+.maz-ia-ov {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 5;
+  display: flex; flex-wrap: wrap; gap: 3px; padding: 3px; align-items: center;
+  background: rgba(255,255,255,.95); border-top: 1px solid #ddd;
+  opacity: 0; transition: opacity .15s;
+}
+#product_images_container li.image:hover .maz-ia-ov,
+#product_images_container li.image.maz-ia-show .maz-ia-ov,
+.maz-ia-ov:focus-within { opacity: 1; }
+@media (hover: none) { .maz-ia-ov { opacity: 1; } }
+.maz-ia-ov select { flex: 1 1 60px; min-width: 0; font-size: 10px; height: 20px; line-height: 18px; padding: 0 2px; }
+.maz-ia-overlay, .maz-ia-ov-revert {
+  flex: 0 0 auto; padding: 0 7px; font-size: 11px; line-height: 18px; height: 20px; cursor: pointer;
+  background: #fff; border: 1px solid #999; border-radius: 3px; color: #222;
+}
+.maz-ia-ov-revert[hidden] { display: none; }
+.maz-ia-overlay:disabled, .maz-ia-ov-revert:disabled { cursor: wait; }
+.maz-ia-ov .maz-ia-flag { margin-left: 0; padding: 0 4px; }
+
+/* preview modal */
+.maz-ia-modal { position: fixed; inset: 0; z-index: 160000; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; padding: 20px; }
+.maz-ia-modal-box { background: #fff; border-radius: 4px; max-width: 1100px; width: 100%; max-height: 95vh; display: flex; flex-direction: column; box-shadow: 0 5px 30px rgba(0,0,0,.4); }
+.maz-ia-modal-head { padding: 10px 14px; border-bottom: 1px solid #ddd; display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.maz-ia-modal-x { margin-left: auto; background: none; border: 0; font-size: 22px; line-height: 1; cursor: pointer; color: #666; }
+.maz-ia-modal-body { display: flex; gap: 12px; padding: 12px; overflow: auto; background: #f0f0f1; }
+.maz-ia-modal-body figure { flex: 1 1 0; margin: 0; text-align: center; min-width: 0; }
+.maz-ia-modal-body img { max-width: 100%; max-height: 62vh; border: 1px solid #ccc; background: #fff; }
+.maz-ia-modal-body figcaption { font-size: 12px; color: #555; margin-top: 4px; }
+.maz-ia-pv-flags { margin: 6px 14px; padding: 6px 10px; background: #fff3cd; color: #7a5600; border-radius: 3px; list-style: none; font-size: 12px; }
+.maz-ia-pv-ok { margin: 6px 14px; color: #1e7e34; font-size: 12px; }
+.maz-ia-modal-foot { padding: 10px 14px; border-top: 1px solid #ddd; text-align: right; }
+@media (max-width: 782px) { .maz-ia-modal-body { flex-direction: column; } }
+
+/* background job progress */
+.maz-ia-bar { height: 8px; background: #e2e4e7; border-radius: 4px; overflow: hidden; margin: 0 0 8px; }
+.maz-ia-bar div { height: 100%; background: #2271b1; transition: width .4s; }
+.maz-ia-job-errors { margin: 0 0 8px 18px; font-size: 12px; color: #a00; max-height: 120px; overflow: auto; }
